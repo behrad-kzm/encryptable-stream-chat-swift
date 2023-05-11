@@ -50,6 +50,8 @@ open class ComposerVC: _ViewController,
     InputTextViewClipboardAttachmentDelegate {
     /// The content of the composer.
     public struct Content {
+        
+        public var publishDecryptionHandler: ((String) -> String)? = nil
         /// The text of the input text view.
         public var text: String
         /// The state of the composer.
@@ -496,7 +498,7 @@ open class ComposerVC: _ViewController,
     // MARK: - Actions
 
     @objc open func publishMessage(sender: UIButton) {
-        let text: String
+        var text: String
         if let command = content.command {
             text = "/\(command.name) " + content.text
         } else {
@@ -504,6 +506,7 @@ open class ComposerVC: _ViewController,
         }
 
         if let editingMessage = content.editingMessage {
+            text = publishDecryptionHandler != nil ? publishDecryptionHandler!(text) : text
             editMessage(withId: editingMessage.id, newText: text)
 
             // This is just a temporary solution. This will be handled on the LLC level
@@ -511,6 +514,7 @@ open class ComposerVC: _ViewController,
             channelController?.sendStopTypingEvent()
             content.clear()
         } else {
+            text = publishDecryptionHandler != nil ? publishDecryptionHandler!(text) : text
             createNewMessage(text: text)
 
             if !content.hasCommand, let cooldownDuration = channelController?.channel?.cooldownDuration {
