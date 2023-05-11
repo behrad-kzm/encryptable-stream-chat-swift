@@ -506,7 +506,7 @@ open class ComposerVC: _ViewController,
         }
 
         if let editingMessage = content.editingMessage {
-            text = publishDecryptionHandler != nil ? publishDecryptionHandler!(text) : text
+            text = content.publishDecryptionHandler != nil ? content.publishDecryptionHandler!(text) : text
             editMessage(withId: editingMessage.id, newText: text)
 
             // This is just a temporary solution. This will be handled on the LLC level
@@ -514,7 +514,7 @@ open class ComposerVC: _ViewController,
             channelController?.sendStopTypingEvent()
             content.clear()
         } else {
-            text = publishDecryptionHandler != nil ? publishDecryptionHandler!(text) : text
+            text = content.publishDecryptionHandler != nil ? content.publishDecryptionHandler!(text) : text
             createNewMessage(text: text)
 
             if !content.hasCommand, let cooldownDuration = channelController?.channel?.cooldownDuration {
