@@ -51,7 +51,7 @@ open class ComposerVC: _ViewController,
     /// The content of the composer.
     public struct Content {
         
-        public var publishEncryptionHandler: ((String) -> String)? = nil
+        public static var publishEncryptionHandler: ((String) -> String)? = nil
         /// The text of the input text view.
         public var text: String
         /// The state of the composer.
@@ -135,7 +135,6 @@ open class ComposerVC: _ViewController,
 
         /// Resets the current content state and clears the content.
         public mutating func clear() {
-            let encryption = publishEncryptionHandler
             self = .init(
                 text: "",
                 state: .new,
@@ -148,7 +147,6 @@ open class ComposerVC: _ViewController,
                 extraData: [:],
                 cooldownTime: cooldownTime
             )
-          self.publishEncryptionHandler = encryption
         }
 
         /// Sets the content state to editing a message.
@@ -508,7 +506,7 @@ open class ComposerVC: _ViewController,
         }
 
         if let editingMessage = content.editingMessage {
-            text = content.publishEncryptionHandler!(text)
+          text = ComposerVC.Content.publishEncryptionHandler!(text)
             editMessage(withId: editingMessage.id, newText: text)
 
             // This is just a temporary solution. This will be handled on the LLC level
@@ -516,7 +514,7 @@ open class ComposerVC: _ViewController,
             channelController?.sendStopTypingEvent()
             content.clear()
         } else {
-            text = content.publishEncryptionHandler!(text)
+          text = ComposerVC.Content.publishEncryptionHandler!(text)
             createNewMessage(text: text)
 
             if !content.hasCommand, let cooldownDuration = channelController?.channel?.cooldownDuration {
