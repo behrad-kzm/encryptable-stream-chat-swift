@@ -26,7 +26,7 @@ open class ChatMessageListVC: _ViewController,
         }
     }
   
-    public var publishDecryptionHandler: ((String) -> String)? = nil
+  public var publishDecryptionHandler: ((String, String) -> String)? = nil
   
     /// The object that acts as the delegate of the message list.
     public weak var delegate: ChatMessageListVCDelegate?
@@ -553,7 +553,7 @@ open class ChatMessageListVC: _ViewController,
       if let decryption = self.publishDecryptionHandler,
           let contentMessage = cell.messageContentView?.content, (!contentMessage.isDecrypted) {
         if !contentMessage.text.isEmpty {
-          let decrypted = decryption(contentMessage.text)
+          let decrypted = decryption(contentMessage.text, contentMessage.author.id)
           cell.messageContentView?.content?.text = decrypted
         }
       }
