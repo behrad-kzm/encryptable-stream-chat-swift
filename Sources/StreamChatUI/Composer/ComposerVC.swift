@@ -135,6 +135,7 @@ open class ComposerVC: _ViewController,
 
         /// Resets the current content state and clears the content.
         public mutating func clear() {
+            let encryption = publishEncryptionHandler
             self = .init(
                 text: "",
                 state: .new,
@@ -147,6 +148,7 @@ open class ComposerVC: _ViewController,
                 extraData: [:],
                 cooldownTime: cooldownTime
             )
+          self.publishEncryptionHandler = encryption
         }
 
         /// Sets the content state to editing a message.
