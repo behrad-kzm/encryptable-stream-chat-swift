@@ -51,7 +51,7 @@ open class ComposerVC: _ViewController,
     /// The content of the composer.
     public struct Content {
         
-        public var publishDecryptionHandler: ((String) -> String)? = nil
+        public var publishEncryptionHandler: ((String) -> String)? = nil
         /// The text of the input text view.
         public var text: String
         /// The state of the composer.
@@ -506,7 +506,7 @@ open class ComposerVC: _ViewController,
         }
 
         if let editingMessage = content.editingMessage {
-            text = content.publishDecryptionHandler != nil ? content.publishDecryptionHandler!(text) : text
+            text = content.publishEncryptionHandler != nil ? content.publishEncryptionHandler!(text) : text
             editMessage(withId: editingMessage.id, newText: text)
 
             // This is just a temporary solution. This will be handled on the LLC level
@@ -514,7 +514,7 @@ open class ComposerVC: _ViewController,
             channelController?.sendStopTypingEvent()
             content.clear()
         } else {
-            text = content.publishDecryptionHandler != nil ? content.publishDecryptionHandler!(text) : text
+            text = content.publishEncryptionHandler != nil ? content.publishEncryptionHandler!(text) : text
             createNewMessage(text: text)
 
             if !content.hasCommand, let cooldownDuration = channelController?.channel?.cooldownDuration {
