@@ -35,6 +35,15 @@ internal enum L10n {
     internal static var maxSizeExceeded: String { L10n.tr("Localizable", "attachment.max-size-exceeded") }
   }
 
+  internal enum Audio {
+    internal enum Player {
+      /// x%@
+      internal static func rate(_ p1: Any) -> String {
+        return L10n.tr("Localizable", "audio.player.rate", String(describing: p1))
+      }
+    }
+  }
+
   internal enum Channel {
     internal enum Item {
       /// No messages
@@ -43,6 +52,12 @@ internal enum L10n {
       internal static var typingPlural: String { L10n.tr("Localizable", "channel.item.typing-plural") }
       /// is typing ...
       internal static var typingSingular: String { L10n.tr("Localizable", "channel.item.typing-singular") }
+      internal enum Search {
+        ///  in %@
+        internal static func `in`(_ p1: Any) -> String {
+          return L10n.tr("Localizable", "channel.item.search.in", String(describing: p1))
+        }
+      }
     }
     internal enum Name {
       /// and
@@ -57,6 +72,8 @@ internal enum L10n {
   }
 
   internal enum ChannelList {
+    /// Search
+    internal static var search: String { L10n.tr("Localizable", "channelList.search") }
     internal enum Empty {
       /// Start a chat
       internal static var button: String { L10n.tr("Localizable", "channelList.empty.button") }
@@ -69,6 +86,20 @@ internal enum L10n {
       /// Error loading channels
       internal static var message: String { L10n.tr("Localizable", "channelList.error.message") }
     }
+    internal enum Preview {
+      internal enum Voice {
+        /// Voice message
+        internal static var recording: String { L10n.tr("Localizable", "channelList.preview.voice.recording") }
+      }
+    }
+    internal enum Search {
+      internal enum Empty {
+        /// No results for %@
+        internal static func subtitle(_ p1: Any) -> String {
+          return L10n.tr("Localizable", "channelList.search.empty.subtitle", String(describing: p1))
+        }
+      }
+    }
   }
 
   internal enum Composer {
@@ -77,6 +108,12 @@ internal enum L10n {
       internal static var channelReply: String { L10n.tr("Localizable", "composer.checkmark.channel-reply") }
       /// Also send as direct message
       internal static var directMessageReply: String { L10n.tr("Localizable", "composer.checkmark.direct-message-reply") }
+    }
+    internal enum LinksDisabled {
+      /// Sending links is not allowed in this conversation.
+      internal static var subtitle: String { L10n.tr("Localizable", "composer.links-disabled.subtitle") }
+      /// Links are disabled
+      internal static var title: String { L10n.tr("Localizable", "composer.links-disabled.title") }
     }
     internal enum Picker {
       /// Camera
@@ -95,6 +132,8 @@ internal enum L10n {
       internal static var giphy: String { L10n.tr("Localizable", "composer.placeholder.giphy") }
       /// Send a message
       internal static var message: String { L10n.tr("Localizable", "composer.placeholder.message") }
+      /// You can't send messages in this channel
+      internal static var messageDisabled: String { L10n.tr("Localizable", "composer.placeholder.messageDisabled") }
       /// Slow mode ON
       internal static var slowMode: String { L10n.tr("Localizable", "composer.placeholder.slowMode") }
     }
@@ -258,6 +297,19 @@ internal enum L10n {
       /// Plural format key: "%#@reactions@"
       internal static func numberOfReactions(_ p1: Int) -> String {
         return L10n.tr("Localizable", "reaction.authors.number-of-reactions", p1)
+      }
+    }
+  }
+
+  internal enum Recording {
+    /// Slide to cancel
+    internal static var slideToCancel: String { L10n.tr("Localizable", "recording.slideToCancel") }
+    /// Hold to record, release to send
+    internal static var tip: String { L10n.tr("Localizable", "recording.tip") }
+    internal enum Presentation {
+      /// Plural format key: "%#@recording@"
+      internal static func name(_ p1: Int) -> String {
+        return L10n.tr("Localizable", "recording.presentation.name", p1)
       }
     }
   }

@@ -8,12 +8,16 @@
 "channel.item.empty-messages" = "No messages";
 "channel.item.typing-singular" = "is typing ...";
 "channel.item.typing-plural" = "are typing ...";
+"channel.item.search.in" = " in %@";
 
 "channelList.empty.title" = "Let's start chatting!";
 "channelList.empty.subtitle" = "How about sending your first message to a friend?";
 "channelList.empty.button" = "Start a chat";
+"channelList.search" = "Search";
+"channelList.search.empty.subtitle" = "No results for %@";
 
 "channelList.error.message" = "Error loading channels";
+"channelList.preview.voice.recording" = "Voice message";
 
 "message.actions.inline-reply" = "Reply";
 "message.actions.thread-reply" = "Thread Reply";
@@ -48,6 +52,7 @@
 "composer.title.edit" = "Edit Message";
 "composer.title.reply" = "Reply to Message";
 "composer.placeholder.message" = "Send a message";
+"composer.placeholder.messageDisabled" = "You can't send messages in this channel";
 "composer.placeholder.slowMode" = "Slow mode ON";
 "composer.placeholder.giphy" = "Search GIFs";
 "composer.checkmark.direct-message-reply" = "Also send as direct message";
@@ -57,6 +62,8 @@
 "composer.picker.media" = "Photo or Video";
 "composer.picker.camera" = "Camera";
 "composer.picker.cancel" = "Cancel";
+"composer.links-disabled.title" = "Links are disabled";
+"composer.links-disabled.subtitle" = "Sending links is not allowed in this conversation.";
 
 "composer.suggestions.commands.header" = "Instant Commands";
 "message.sending.attachment-uploading-failed" = "UPLOADING FAILED";
@@ -87,3 +94,8 @@
 "dates.time-ago-months-plural" = "last seen %d months ago";
 
 "you" = "You";
+
+"recording.tip" = "Hold to record, release to send";
+"recording.slideToCancel" = "Slide to cancel";
+
+"audio.player.rate" = "x%@";

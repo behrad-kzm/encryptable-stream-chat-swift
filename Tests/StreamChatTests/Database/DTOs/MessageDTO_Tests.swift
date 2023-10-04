@@ -84,6 +84,7 @@ final class MessageDTO_Tests: XCTestCase {
         let anotherUserRead: ChannelReadPayload = .init(
             user: anotherUser,
             lastReadAt: anotherUserMessage.createdAt,
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -92,6 +93,7 @@ final class MessageDTO_Tests: XCTestCase {
         let currentUserRead: ChannelReadPayload = .init(
             user: currentUser,
             lastReadAt: anotherUserMessage.createdAt.addingTimeInterval(10),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -145,22 +147,26 @@ final class MessageDTO_Tests: XCTestCase {
         let currentUserRead: ChannelReadPayload = .init(
             user: currentUser,
             lastReadAt: currentUserMessage.createdAt,
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
         let member1ReadEarlierOwnMessage: ChannelReadPayload = .init(
             user: .dummy(userId: .unique),
             lastReadAt: currentUserMessage.createdAt.addingTimeInterval(-10),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
         let member2ReadAtOwnMessage: ChannelReadPayload = .init(
             user: .dummy(userId: .unique),
             lastReadAt: currentUserMessage.createdAt.addingTimeInterval(2),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
         let member3ReadLaterOwnMessage: ChannelReadPayload = .init(
             user: .dummy(userId: .unique),
             lastReadAt: currentUserMessage.createdAt.addingTimeInterval(10),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -608,6 +614,50 @@ final class MessageDTO_Tests: XCTestCase {
         XCTAssertEqual(messagePayload.translations?.mapKeys(\.languageCode), loadedMessage?.translations)
     }
 
+    func test_message_isNotOverwrittenWhenAlreadyInDatabase_andIsPending() throws {
+        let pairs: [(LocalMessageState, shouldOverwrite: Bool)] = [
+            (.pendingSync, false),
+            (.syncing, true),
+            (.syncingFailed, true),
+            (.pendingSend, false),
+            (.sending, true),
+            (.sendingFailed, true),
+            (.deleting, true),
+            (.deletingFailed, true)
+        ]
+
+        try pairs.forEach { (state, shouldOverwrite) in
+            // Given
+            let expectedMessage = shouldOverwrite ? "Edited Text" : "Original Text"
+            let messageId = MessageId.unique
+            let channelId = ChannelId.unique
+            let originalMessage = MessagePayload.dummy(messageId: messageId, text: "Original Text")
+
+            try database.writeSynchronously {
+                try $0.saveChannel(payload: .dummy(channel: .dummy(cid: channelId)))
+                let dto = try $0.saveMessage(payload: originalMessage, for: channelId, syncOwnReactions: false, cache: nil)
+                dto.localMessageState = state
+            }
+
+            var messageInDatabase: MessageDTO? {
+                database.viewContext.message(id: messageId)
+            }
+
+            XCTAssertEqual(messageInDatabase?.text, originalMessage.text)
+            XCTAssertEqual(messageInDatabase?.localMessageState, state)
+
+            // When
+            let editedMessage = MessagePayload.dummy(messageId: messageId, text: "Edited Text")
+            try database.writeSynchronously {
+                try $0.saveMessage(payload: editedMessage, for: channelId, syncOwnReactions: false, cache: nil)
+            }
+
+            // Then
+            XCTAssertEqual(messageInDatabase?.text, expectedMessage)
+            XCTAssertEqual(messageInDatabase?.localMessageState, state)
+        }
+    }
+
     func test_messagePayload_withExtraData_isStoredAndLoadedFromDB() throws {
         let userId: UserId = .unique
         let messageId: MessageId = .unique
@@ -999,6 +1049,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             messageId = try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: messageText,
                 pinning: messagePinning,
                 command: messageCommand,
@@ -1109,6 +1160,7 @@ final class MessageDTO_Tests: XCTestCase {
             database.write({ session in
                 let message1DTO = try session.createNewMessage(
                     in: cid,
+                    messageId: .unique,
                     text: .unique,
                     pinning: nil,
                     command: nil,
@@ -1130,6 +1182,7 @@ final class MessageDTO_Tests: XCTestCase {
 
                 let message2DTO = try session.createNewMessage(
                     in: cid,
+                    messageId: .unique,
                     text: .unique,
                     pinning: nil,
                     command: nil,
@@ -1171,7 +1224,8 @@ final class MessageDTO_Tests: XCTestCase {
         let messagePayload: MessagePayload = .dummy(
             messageId: .unique,
             authorUserId: .unique,
-            channel: ChannelDetailPayload.dummy(cid: channelId)
+            channel: ChannelDetailPayload.dummy(cid: channelId),
+            cid: channelId
         )
 
         try database.writeSynchronously { session in
@@ -1225,6 +1279,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             let messageDTO = try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: newMessageText,
                 pinning: newMessagePinning,
                 command: newMessageCommand,
@@ -1290,6 +1345,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             let messageDTO = try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: .unique,
                 pinning: nil,
                 command: nil,
@@ -1334,6 +1390,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             let replyShownInChannelDTO = try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: .unique,
                 pinning: nil,
                 command: nil,
@@ -1391,6 +1448,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: .unique,
                 pinning: nil,
                 command: nil,
@@ -1417,6 +1475,7 @@ final class MessageDTO_Tests: XCTestCase {
             database.write({ (session) in
                 try session.createNewMessage(
                     in: .unique,
+                    messageId: .unique,
                     text: .unique,
                     pinning: MessagePinning(expirationDate: .unique),
                     command: .unique,
@@ -1457,6 +1516,7 @@ final class MessageDTO_Tests: XCTestCase {
             database.write({ (session) in
                 try session.createNewMessage(
                     in: .unique,
+                    messageId: .unique,
                     text: .unique,
                     pinning: MessagePinning(expirationDate: .unique),
                     command: .unique,
@@ -1502,6 +1562,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             let messageDTO = try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: newMessageText,
                 pinning: MessagePinning(expirationDate: .unique),
                 quotedMessageId: nil,
@@ -1541,6 +1602,7 @@ final class MessageDTO_Tests: XCTestCase {
         try database.writeSynchronously { session in
             let replyDTO = try session.createNewMessage(
                 in: cid,
+                messageId: .unique,
                 text: "Reply",
                 pinning: nil,
                 command: nil,
@@ -3213,6 +3275,55 @@ final class MessageDTO_Tests: XCTestCase {
         XCTAssertEqual(fetchRequest.fetchLimit, 20)
     }
 
+    // MARK: Rescue messages stuck in .sending
+
+    func test_rescueMessagesStuckInSending_setsStateToPendingSend_whenNeeded() throws {
+        // Given
+        let channelId = ChannelId.unique
+        let deletingMessageId = MessageId.unique
+        let pendingSendMessageId = MessageId.unique
+        let sendingMessageId = MessageId.unique
+        let sendingMessageIdWithAttachments = MessageId.unique
+
+        let pairs: [(MessageId, LocalMessageState, [MessageAttachmentPayload])] = [
+            (deletingMessageId, .deleting, []),
+            (pendingSendMessageId, .pendingSend, []),
+            (sendingMessageId, .sending, []),
+            (sendingMessageIdWithAttachments, .sending, [.dummy(), .dummy()])
+        ]
+
+        try database.writeSynchronously { session in
+            try session.saveChannel(payload: .dummy(channel: .dummy(cid: channelId)))
+
+            try pairs.forEach { id, state, attachments in
+                let message = try session.saveMessage(
+                    payload: .dummy(messageId: id, attachments: attachments),
+                    for: channelId,
+                    syncOwnReactions: false,
+                    cache: nil
+                )
+                message.localMessageState = state
+            }
+        }
+
+        let sendingMessages = MessageDTO.loadSendingMessages(context: database.viewContext)
+        XCTAssertEqual(sendingMessages.count, 2)
+        XCTAssertNotNil(sendingMessages.first(where: { $0.id == sendingMessageId }))
+        XCTAssertNotNil(sendingMessages.first(where: { $0.id == sendingMessageIdWithAttachments }))
+
+        // When
+        try database.writeSynchronously {
+            $0.rescueMessagesStuckInSending()
+        }
+
+        // Then
+        XCTAssertEqual(MessageDTO.loadSendingMessages(context: database.viewContext).count, 0)
+        XCTAssertEqual(database.viewContext.message(id: sendingMessageId)?.localMessageState, .pendingSend)
+        XCTAssertEqual(database.viewContext.message(id: sendingMessageIdWithAttachments)?.localMessageState, .pendingSend)
+        XCTAssertEqual(database.viewContext.message(id: pendingSendMessageId)?.localMessageState, .pendingSend)
+        XCTAssertEqual(database.viewContext.message(id: deletingMessageId)?.localMessageState, .deleting)
+    }
+
     // MARK: - isLocalOnly
 
     func test_isLocalOnly_whenLocalMessageStateIsWaitingToBeSentToServer_returnsTrue() throws {
@@ -3246,7 +3357,30 @@ final class MessageDTO_Tests: XCTestCase {
         XCTAssertEqual(message.isLocalOnly, false)
     }
 
-    // MARK: Helpers:
+    // MARK: - message.cid
+
+    func test_cid_whenChannelIsDeleted_thenCidNotNil() throws {
+        // GIVEN
+        let messagePayload = MessagePayload.dummy(cid: .unique)
+        let channelId = ChannelId.unique
+        try database.writeSynchronously { session in
+            let channelDTO = try session.saveChannel(payload: .dummy(channel: .dummy(cid: channelId)))
+            try session.saveMessage(payload: messagePayload, channelDTO: channelDTO, syncOwnReactions: false, cache: nil)
+        }
+
+        // WHEN
+        try database.writeSynchronously { session in
+            session.removeChannels(cids: Set([channelId]))
+        }
+
+        // THEN
+        let messageDTO = try XCTUnwrap(database.viewContext.message(id: messagePayload.id))
+        let messageModel = try messageDTO.asModel()
+        XCTAssertNotNil(messageDTO.cid)
+        XCTAssertNotNil(messageModel.cid)
+    }
+
+    // MARK: - Helpers:
 
     private func createMessage(with message: MessagePayload) throws -> MessageDTO {
         let context = database.viewContext

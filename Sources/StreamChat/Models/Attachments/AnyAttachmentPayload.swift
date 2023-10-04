@@ -31,6 +31,12 @@ public struct AnyAttachmentLocalMetadata {
     /// The original width and height of an image or video attachment in Pixels.
     public var originalResolution: (width: Double, height: Double)?
 
+    /// The duration of a media file
+    public var duration: TimeInterval?
+
+    /// The data that can be used to render a waveform visualisation of an audio file.
+    public var waveformData: [Float]?
+
     public init() {}
 }
 
@@ -119,6 +125,7 @@ public extension AnyAttachmentPayload {
             payload = VideoAttachmentPayload(
                 title: localFileURL.lastPathComponent,
                 videoRemoteURL: localFileURL,
+                thumbnailURL: nil,
                 file: file,
                 extraData: extraData
             )
@@ -134,6 +141,15 @@ public extension AnyAttachmentPayload {
                 title: localFileURL.lastPathComponent,
                 assetRemoteURL: localFileURL,
                 file: file,
+                extraData: extraData
+            )
+        case .voiceRecording:
+            payload = VoiceRecordingAttachmentPayload(
+                title: localFileURL.lastPathComponent,
+                voiceRecordingRemoteURL: localFileURL,
+                file: file,
+                duration: localMetadata?.duration,
+                waveformData: localMetadata?.waveformData,
                 extraData: extraData
             )
         default:
@@ -152,7 +168,7 @@ extension ClientError {
     public class UnsupportedUploadableAttachmentType: ClientError {
         init(_ type: AttachmentType) {
             super.init(
-                "For uploadable attachments only .image/.file/.video types are supported."
+                "For uploadable attachments only image/video/audio/file/voiceRecording types are supported."
             )
         }
     }
@@ -171,5 +187,27 @@ extension AttachmentPayload {
         )
 
         return customPayload.isEmpty ? nil : customPayload
+    }
+}
+
+public extension Array where Element == ChatMessageAttachment<Data> {
+    func toAnyAttachmentPayload() -> [AnyAttachmentPayload] {
+        compactMap { attachment in
+            func anyAttachmentPayload<T: Decodable & AttachmentPayload>(for type: T.Type) -> AnyAttachmentPayload? {
+                guard let payload = try? JSONDecoder.default.decode(T.self, from: attachment.payload) else { return nil }
+                return AnyAttachmentPayload(payload: payload)
+            }
+
+            switch attachment.type {
+            case .image: return anyAttachmentPayload(for: ImageAttachmentPayload.self)
+            case .video: return anyAttachmentPayload(for: VideoAttachmentPayload.self)
+            case .audio: return anyAttachmentPayload(for: AudioAttachmentPayload.self)
+            case .file: return anyAttachmentPayload(for: FileAttachmentPayload.self)
+            case .voiceRecording: return anyAttachmentPayload(for: VoiceRecordingAttachmentPayload.self)
+            default:
+                log.assertionFailure("Unsupported attachment")
+                return nil
+            }
+        }
     }
 }

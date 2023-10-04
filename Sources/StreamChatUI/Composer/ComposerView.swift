@@ -59,6 +59,13 @@ open class ComposerView: _View, ThemeProvider {
         .withoutAutoresizingMaskConstraints
         .withAccessibilityIdentifier(identifier: "sendButton")
 
+    /// A button to record an VoiceRecording.
+    public private(set) lazy var recordButton: RecordButton = components
+        .recordButton
+        .init()
+        .withoutAutoresizingMaskConstraints
+        .withAccessibilityIdentifier(identifier: "recordButton")
+
     /// A view for showing a cooldown when Slow Mode is active.
     public private(set) lazy var cooldownView: CooldownView = components
         .cooldownView.init()
@@ -159,6 +166,9 @@ open class ComposerView: _View, ThemeProvider {
         trailingContainer.addArrangedSubview(confirmButton)
         cooldownView.isHidden = true
         confirmButton.isHidden = true
+        if components.isVoiceRecordingEnabled {
+            trailingContainer.addArrangedSubview(recordButton)
+        }
 
         leadingContainer.axis = .horizontal
         leadingContainer.alignment = .center
@@ -176,7 +186,7 @@ open class ComposerView: _View, ThemeProvider {
         titleLabel.centerXAnchor.pin(equalTo: centerXAnchor).isActive = true
         titleLabel.pin(anchors: [.top, .bottom], to: headerView)
 
-        [sendButton, confirmButton]
+        [sendButton, confirmButton, recordButton]
             .forEach { button in
                 button.pin(anchors: [.width], to: 35)
                 button.pin(anchors: [.height], to: 40)

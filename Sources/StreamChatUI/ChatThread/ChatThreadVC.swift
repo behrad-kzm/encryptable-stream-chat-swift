@@ -12,12 +12,16 @@ open class ChatThreadVC: _ViewController,
     ChatMessageListVCDataSource,
     ChatMessageListVCDelegate,
     ChatMessageControllerDelegate,
-    EventsControllerDelegate {
+    EventsControllerDelegate,
+    AudioQueuePlayerDatasource {
     /// Controller for observing data changes within the channel
     open var channelController: ChatChannelController!
 
     /// Controller for observing data changes within the parent thread message.
     open var messageController: ChatMessageController!
+
+    /// An optional message id to where the thread should jump to when opening the thread.
+    public var initialReplyId: MessageId?
 
     /// Controller for observing typing events for this thread.
     open lazy var channelEventsController: ChannelEventsController = client.channelEventsController(for: messageController.cid)
@@ -60,19 +64,43 @@ open class ChatThreadVC: _ViewController,
         .threadHeaderView.init()
         .withoutAutoresizingMaskConstraints
 
+    /// The audioPlayer  that will be used for the playback of VoiceRecordings
+    open private(set) lazy var audioPlayer: AudioPlaying = components
+        .audioPlayer
+        .init()
+
+    /// The provider that will be asked to provide the next VoiceRecording to play automatically once the
+    /// currently playing one, finishes.
+    open private(set) lazy var audioQueuePlayerNextItemProvider: AudioQueuePlayerNextItemProvider = components
+        .audioQueuePlayerNextItemProvider
+        .init()
+
     public var messageComposerBottomConstraint: NSLayoutConstraint?
 
     private var currentlyTypingUsers: Set<ChatUser> = []
 
+    /// A boolean value that determines whether the thread view renders the parent message at the top.
+    open var shouldRenderParentMessage: Bool {
+        components.threadRendersParentMessageEnabled
+    }
+
+    /// A boolean value that determines if replies start from the oldest replies.
+    /// By default it is false, and newest replies are rendered in the first page.
+    open var shouldStartFromOldestReplies: Bool {
+        components.threadRepliesStartFromOldest
+    }
+    
     override open func setUp() {
         super.setUp()
 
         messageListVC.delegate = self
         messageListVC.dataSource = self
         messageListVC.client = client
+        messageListVC.audioPlayer = audioPlayer
 
         messageComposerVC.channelController = channelController
         messageComposerVC.userSearchController = userSuggestionSearchController
+        messageComposerVC.audioPlayer = audioPlayer
         if let message = messageController.message {
             messageComposerVC.content.threadMessage = message
         }
@@ -80,6 +108,10 @@ open class ChatThreadVC: _ViewController,
         messageController.delegate = self
         channelEventsController.delegate = self
         eventsController.delegate = self
+
+        messageListVC.swipeToReplyGestureHandler.onReply = { [weak self] message in
+            self?.messageComposerVC.content.quoteMessage(message)
+        }
 
         // Handle pagination
         viewPaginationHandler.onNewTopPage = { [weak self] in
@@ -89,20 +121,20 @@ open class ChatThreadVC: _ViewController,
             self?.messageController.loadNextReplies()
         }
 
-        // Set the initial data
-        messages = getRepliesWithThreadRootMessage(from: messageController)
-
-        let completeSetUp: (ChatMessage?) -> Void = { [messageController, messageComposerVC] message in
-            if messageComposerVC.content.threadMessage == nil,
-               let message = messageController?.message {
-                messageComposerVC.content.threadMessage = message
-            }
-
-            self.messageController.loadPreviousReplies()
+        if let queueAudioPlayer = audioPlayer as? StreamAudioQueuePlayer {
+            queueAudioPlayer.dataSource = self
         }
 
-        messageController.synchronize { [weak self] _ in
-            completeSetUp(self?.messageController.message)
+        // Set the initial data
+        messages = Array(getReplies(from: messageController))
+
+        if messageController.message != nil {
+            didFinishSynchronizing(with: nil)
+            return
+        }
+
+        messageController.synchronize { [weak self] error in
+            self?.didFinishSynchronizing(with: error)
         }
     }
 
@@ -140,6 +172,59 @@ open class ChatThreadVC: _ViewController,
         resignFirstResponder()
 
         keyboardHandler.stop()
+    }
+
+    /// Called when the syncing of the `messageController` is finished.
+    /// - Parameter error: An `error` if the syncing failed; `nil` if it was successful.
+    open func didFinishSynchronizing(with error: Error?) {
+        if messageComposerVC.content.threadMessage == nil,
+           let message = messageController?.message {
+            messageComposerVC.content.threadMessage = message
+        }
+
+        // If there is an initial reply id, we should jump to it
+        if let initialReplyId = self.initialReplyId {
+            messageController.loadPageAroundReplyId(initialReplyId) { [weak self] error in
+                guard error == nil else {
+                    return
+                }
+
+                let shouldAnimate = self?.components.shouldAnimateJumpToMessageWhenOpeningChannel == true
+                self?.jumpToMessage(id: initialReplyId, animated: shouldAnimate)
+            }
+            return
+        }
+
+        // When we tap on the parent message and start from oldest replies is enabled
+        if shouldStartFromOldestReplies, let parentMessage = messageController.message {
+            messageController.loadPageAroundReplyId(parentMessage.id) { [weak self] _ in
+                self?.messageListVC.scrollToTop(animated: false)
+            }
+            return
+        }
+
+        messageController.loadPreviousReplies()
+    }
+
+    /// Jump to a given message.
+    /// In case the message is already loaded, it directly goes to it.
+    /// If not, it will load the messages around it and go to that page.
+    ///
+    /// This function is an high-level abstraction of `messageListVC.jumpToMessage(id:onHighlight:)`.
+    ///
+    /// - Parameters:
+    ///   - id: The id of message which the message list should go to.
+    ///   - animated: `true` if you want to animate the change in position; `false` if it should be immediate.
+    ///   - shouldHighlight: Whether the message should be highlighted when jumping to it. By default it is highlighted.
+    public func jumpToMessage(id: MessageId, animated: Bool = true, shouldHighlight: Bool = true) {
+        if shouldHighlight {
+            messageListVC.jumpToMessage(id: id, animated: animated) { [weak self] indexPath in
+                self?.messageListVC.highlightCell(at: indexPath)
+            }
+            return
+        }
+
+        messageListVC.jumpToMessage(id: id, animated: animated)
     }
 
     // MARK: - ChatMessageListVCDataSource
@@ -217,6 +302,7 @@ open class ChatThreadVC: _ViewController,
         case is EditActionItem:
             dismiss(animated: true) { [weak self] in
                 self?.messageComposerVC.content.editMessage(message)
+                self?.messageComposerVC.composerView.inputMessageView.textView.becomeFirstResponder()
             }
         case is InlineReplyActionItem:
             dismiss(animated: true) { [weak self] in
@@ -286,7 +372,7 @@ open class ChatThreadVC: _ViewController,
         _ controller: ChatMessageController,
         didChangeMessage change: EntityChange<ChatMessage>
     ) {
-        guard !messages.isEmpty else {
+        guard shouldRenderParentMessage && !messages.isEmpty else {
             return
         }
 
@@ -343,19 +429,37 @@ open class ChatThreadVC: _ViewController,
 
     private func updateMessages(with changes: [ListChange<ChatMessage>]) {
         messageListVC.setPreviousMessagesSnapshot(self.messages)
-        let messages = getRepliesWithThreadRootMessage(from: messageController)
+        let messages = getReplies(from: messageController)
         messageListVC.setNewMessagesSnapshot(messages)
         messageListVC.updateMessages(with: changes)
     }
 
-    private func getRepliesWithThreadRootMessage(from messageController: ChatMessageController) -> [ChatMessage] {
-        var messages = Array(messageController.replies)
+    private func getReplies(from messageController: ChatMessageController) -> LazyCachedMapCollection<ChatMessage> {
+        guard shouldRenderParentMessage else {
+            return messageController.replies
+        }
+        let messages = messageController.replies
         let isFirstPage = messages.count < messageController.repliesPageSize
         let shouldAddRootMessageAtTheTop = isFirstPage || messageController.hasLoadedAllPreviousReplies
         if shouldAddRootMessageAtTheTop, let threadRootMessage = messageController.message {
-            messages.append(threadRootMessage)
+            if messages.last?.id != threadRootMessage.id {
+                messages.append(threadRootMessage)
+            }
         }
         return messages
+    }
+
+    // MARK: - AudioQueuePlayerDatasource
+
+    open func audioQueuePlayerNextAssetURL(
+        _ audioPlayer: AudioPlaying,
+        currentAssetURL: URL?
+    ) -> URL? {
+        audioQueuePlayerNextItemProvider.findNextItem(
+            in: messages,
+            currentVoiceRecordingURL: currentAssetURL,
+            lookUpScope: .subsequentMessagesFromUser
+        )
     }
 
     // MARK: - Deprecations

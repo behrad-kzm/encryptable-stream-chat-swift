@@ -55,7 +55,7 @@ final class UserRobot: Robot {
             "Channel cell is not found at index #\(channelCellIndex)"
         )
 
-        cells.allElementsBoundByIndex[channelCellIndex].safeTap()
+        cells.allElementsBoundByIndex[channelCellIndex].waitForHitPoint().safeTap()
         return self
     }
 
@@ -258,7 +258,7 @@ extension UserRobot {
 
     @discardableResult
     func tapOnScrollToBottomButton() -> Self {
-        MessageListPage.scrollToBottomButton.safeTap()
+        MessageListPage.scrollToBottomButton.tapFrameCenter()
         return self
     }
 
@@ -336,6 +336,13 @@ extension UserRobot {
     }
 
     @discardableResult
+    func swipeMessage(at index: Int = 0) -> Self {
+        let cell = messageCell(withIndex: index).waitForHitPoint()
+        cell.swipeRight()
+        return self
+    }
+
+    @discardableResult
     func openComposerCommands() -> Self {
         if MessageListPage.ComposerCommands.cells.count == 0 {
             MessageListPage.Composer.commandButton.wait().safeTap()
@@ -389,11 +396,18 @@ extension UserRobot {
     @discardableResult
     func uploadImage(count: Int = 1, send: Bool = true) -> Self {
         for i in 1...count {
-            MessageListPage.Composer.attachmentButton.wait().safeTap()
-            MessageListPage.AttachmentMenu.photoOrVideoButton.wait().safeTap()
+            MessageListPage.Composer.attachmentButton.wait(timeout: 10).safeTap()
+            MessageListPage.AttachmentMenu.photoOrVideoButton.wait(timeout: 10).safeTap()
             MessageListPage.AttachmentMenu.images.waitCount(1).allElementsBoundByIndex[i].safeTap()
         }
         if send { sendMessage("", waitForAppearance: false) }
+        return self
+    }
+    
+    @discardableResult
+    func restartImageUpload(messageCellIndex: Int = 0) -> Self {
+        let messageCell = messageCell(withIndex: messageCellIndex)
+        MessageListPage.Attributes.restartAttachmentUploadIcon(in: messageCell).wait(timeout: 10).safeTap()
         return self
     }
 

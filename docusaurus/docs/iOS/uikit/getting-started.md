@@ -80,14 +80,22 @@ ChatClient.shared.connectUser(userInfo: userInfo, tokenProvider: tokenProvider) 
 Whenever your users leave the chat component, you should use disconnect to stop receiving chat updates and events while using other features of your app. You disconnect by calling:
 
 ```swift
-chatClient.disconnect()
+chatClient.disconnect {
+    // dismiss the current screen or go to another screen
+    print("disconnect completed")
+}
 ```
 
 If your users logout form their account you should use logout instead for completely logging out from the session. You logout by calling:
 
 ```swift
-chatClient.logout()
+chatClient.logout {
+    // dismiss the current screen or go to another screen
+    print("logout completed")
+}
 ```
+
+It's important that you wait for the completion handler to be called before trying to login with a different user.
 
 ### Show Channel List
 
@@ -149,7 +157,7 @@ Your `ChannelId` has to be a unique ID and you can set this to anything, in this
 
 :::tip Using Synchronize
 
-After creating the channel `try ChatClient.shared.channelController(createChannelWithId: ChannelId(type: .livestream, id: UUID().uuidString), name: channelName)` it's important you call `synchronize()` after so the local and remote data is updated. You can read more about the importance of `synchronize()` [here](../../client/importance-of-synchronize)..
+After creating the channel `try ChatClient.shared.channelController(createChannelWithId: ChannelId(type: .livestream, id: UUID().uuidString), name: channelName)` it's important you call `synchronize()` after so the local and remote data is updated. You can read more about the importance of `synchronize()` [here](../../client/importance-of-synchronize).
 
 :::
 

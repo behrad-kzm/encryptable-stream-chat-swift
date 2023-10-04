@@ -1,5 +1,4 @@
-// swift-tools-version:5.3
-// When used via SPM the minimum Swift version is 5.3 because we need support for resources
+// swift-tools-version:5.6
 
 import Foundation
 import PackageDescription
@@ -29,7 +28,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(name: "StreamChatTestHelpers", url: "https://github.com/GetStream/stream-chat-swift-test-helpers.git", .exact("0.2.5")),
+        .package(name: "StreamChatTestHelpers", url: "https://github.com/GetStream/stream-chat-swift-test-helpers.git", .exact("0.2.11")),
         .package(name: "Swifter", url: "https://github.com/httpswift/swifter", .exact("1.5.0"))
     ],
     targets: [

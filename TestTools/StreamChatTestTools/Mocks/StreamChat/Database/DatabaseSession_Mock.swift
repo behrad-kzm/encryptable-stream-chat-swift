@@ -6,7 +6,7 @@ import Foundation
 @testable import StreamChat
 
 /// This class allows you to wrap an existing `DatabaseSession` and adjust the behavior of its methods.
-final class DatabaseSession_Mock: DatabaseSession {
+class DatabaseSession_Mock: DatabaseSession {
     /// The wrapped session
     let underlyingSession: DatabaseSession
 
@@ -19,11 +19,7 @@ final class DatabaseSession_Mock: DatabaseSession {
 
     var markChannelAsReadParams: (cid: ChannelId, userId: UserId, at: Date)?
     var markChannelAsUnreadParams: (cid: ChannelId, userId: UserId)?
-}
 
-// Here start the boilerplate that forwards and intercepts the session calls if needed
-
-extension DatabaseSession_Mock {
     func addReaction(
         to messageId: MessageId,
         type: MessageReactionType,
@@ -123,6 +119,7 @@ extension DatabaseSession_Mock {
 
     func createNewMessage(
         in cid: ChannelId,
+        messageId: MessageId?,
         text: String,
         pinning: MessagePinning?,
         command: String?,
@@ -142,6 +139,7 @@ extension DatabaseSession_Mock {
 
         return try underlyingSession.createNewMessage(
             in: cid,
+            messageId: messageId,
             text: text,
             pinning: pinning,
             command: command,
@@ -207,6 +205,10 @@ extension DatabaseSession_Mock {
         underlyingSession.preview(for: cid)
     }
 
+    func rescueMessagesStuckInSending() {
+        underlyingSession.rescueMessagesStuckInSending()
+    }
+
     func reaction(messageId: MessageId, userId: UserId, type: MessageReactionType) -> MessageReactionDTO? {
         underlyingSession.reaction(messageId: messageId, userId: userId, type: type)
     }
@@ -238,9 +240,16 @@ extension DatabaseSession_Mock {
         markChannelAsUnreadParams = (cid, userId)
         underlyingSession.markChannelAsUnread(cid: cid, by: userId)
     }
-
-    func markChannelAsUnread(for cid: ChannelId, userId: UserId, from messageId: MessageId, lastReadAt: Date?, unreadMessagesCount: Int?) {
-        underlyingSession.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadAt: lastReadAt, unreadMessagesCount: unreadMessagesCount)
+    
+    func markChannelAsUnread(for cid: ChannelId, userId: UserId, from messageId: MessageId, lastReadMessageId: MessageId?, lastReadAt: Date?, unreadMessagesCount: Int?) {
+        underlyingSession.markChannelAsUnread(
+            for: cid,
+            userId: userId,
+            from: messageId,
+            lastReadMessageId: lastReadMessageId,
+            lastReadAt: lastReadAt,
+            unreadMessagesCount: unreadMessagesCount
+        )
     }
 
     func loadChannelRead(cid: ChannelId, userId: String) -> ChannelReadDTO? {
@@ -317,6 +326,10 @@ extension DatabaseSession_Mock {
         return try underlyingSession.createNewAttachment(attachment: attachment, id: id)
     }
 
+    func delete(attachment: AttachmentDTO) {
+        underlyingSession.delete(attachment: attachment)
+    }
+
     func saveChannelMute(
         payload: MutedChannelPayload
     ) throws -> ChannelMuteDTO {
@@ -343,6 +356,13 @@ extension DatabaseSession_Mock {
 
     func deleteQueuedRequest(id: String) {
         underlyingSession.deleteQueuedRequest(id: id)
+    }
+
+    func loadOrCreateChannelRead(
+        cid: StreamChat.ChannelId,
+        userId: StreamChat.UserId
+    ) -> StreamChat.ChannelReadDTO? {
+        underlyingSession.loadChannelRead(cid: cid, userId: userId)
     }
 }
 

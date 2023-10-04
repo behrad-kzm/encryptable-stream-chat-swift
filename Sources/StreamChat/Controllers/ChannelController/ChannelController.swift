@@ -109,13 +109,26 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         updater.paginationState.oldestFetchedMessage?.id
     }
 
-    /// The pagination cursor for loading next (new) messages.
+    /// The id if the first unread message for the current user.
+    ///
+    /// *Warning*:
+    /// When no messages have been read, this value returns:
+    ///     - `nil` if not all the messages have been loaded locally. Paginate to get a valid value for it
+    ///     - The oldest valid message in the history when all the messages have been loaded.
+    ///
+    /// When there are unread messages, but we don't have all of them in memory, we return `nil` message id.
+    /// This is because we cannot calculate the accurate value until we have all he messages in memory.
+    /// Paginate to get the most accurate value.
+    public var firstUnreadMessageId: MessageId? {
+        getFirstUnreadMessageId()
+    }
+
+    /// A boolean indicating if the user marked the channel as unread in the current session
+    public private(set) var isMarkedAsUnread: Bool = false
+
     internal var lastNewestMessageId: MessageId? {
         updater.paginationState.newestFetchedMessage?.id
     }
-    
-    /// The first unread message id
-    public private(set) var firstUnreadMessageId: MessageId?
 
     private var markingRead: Bool = false
 
@@ -181,7 +194,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         updater = self.environment.channelUpdaterBuilder(
             client.channelRepository,
             client.callRepository,
-            client.makeMessagesPaginationStateHandler(parentMessageId: nil),
+            client.makeMessagesPaginationStateHandler(),
             client.databaseContainer,
             client.apiClient
         )
@@ -198,27 +211,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         synchronize(isInRecoveryMode: false, completion)
     }
 
-    // MARK: - Channel features
-
-    /// `true` if the channel has typing events enabled. Defaults to `false` if the channel doesn't exist yet.
-    public var areTypingEventsEnabled: Bool { channel?.config.typingEventsEnabled == true }
-
-    /// `true` if the channel has reactions enabled. Defaults to `false` if the channel doesn't exist yet.
-    public var areReactionsEnabled: Bool { channel?.config.reactionsEnabled == true }
-
-    /// `true` if the channel has replies enabled. Defaults to `false` if the channel doesn't exist yet.
-    public var areRepliesEnabled: Bool { channel?.config.repliesEnabled == true }
-
-    /// `true` if the channel has quotes enabled. Defaults to `false` if the channel doesn't exist yet.
-    public var areQuotesEnabled: Bool { channel?.config.quotesEnabled == true }
-
-    /// `true` if the channel has read events enabled. Defaults to `false` if the channel doesn't exist yet.
-    public var areReadEventsEnabled: Bool { channel?.config.readEventsEnabled == true }
-
-    /// `true` if the channel supports uploading files/images. Defaults to `false` if the channel doesn't exist yet.
-    public var areUploadsEnabled: Bool { channel?.config.uploadsEnabled == true }
-
-    // MARK: - Channel actions
+    // MARK: - Actions
 
     /// Updated channel with new data.
     ///
@@ -256,6 +249,50 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         )
 
         updater.updateChannel(channelPayload: payload) { error in
+            self.callback {
+                completion?(error)
+            }
+        }
+    }
+
+    /// Updates  channel information with provided data, and removes unneeded properties.
+    ///
+    /// - Parameters:
+    ///   - team: New team.
+    ///   - members: New members.
+    ///   - invites: New invites.
+    ///   - extraData: New `ExtraData`.
+    ///   - unsetProperties: Properties from the channel that are going to be cleared/unset.
+    ///   - completion: The completion. Will be called on a **callbackQueue** when the network request is finished.
+    ///                 If request fails, the completion will be called with an error.
+    ///
+    public func partialChannelUpdate(
+        name: String? = nil,
+        imageURL: URL? = nil,
+        team: String? = nil,
+        members: Set<UserId> = [],
+        invites: Set<UserId> = [],
+        extraData: [String: RawJSON] = [:],
+        unsetProperties: [String] = [],
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        /// Perform action only if channel is already created on backend side and have a valid `cid`.
+        guard let cid = cid, isChannelAlreadyCreated else {
+            channelModificationFailed(completion)
+            return
+        }
+
+        let payload: ChannelEditDetailPayload = .init(
+            cid: cid,
+            name: name,
+            imageURL: imageURL,
+            team: team,
+            members: members,
+            invites: invites,
+            extraData: extraData
+        )
+
+        updater.partialChannelUpdate(updates: payload, unsetProperties: unsetProperties) { error in
             self.callback {
                 completion?(error)
             }
@@ -550,7 +587,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     ///
     public func sendKeystrokeEvent(parentMessageId: MessageId? = nil, completion: ((Error?) -> Void)? = nil) {
         /// Ignore if typing events are not enabled
-        guard areTypingEventsEnabled else {
+        guard channel?.canSendTypingEvents == true else {
             callback {
                 completion?(nil)
             }
@@ -580,7 +617,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     ///
     public func sendStartTypingEvent(parentMessageId: MessageId? = nil, completion: ((Error?) -> Void)? = nil) {
         /// Ignore if typing events are not enabled
-        guard areTypingEventsEnabled else {
+        guard channel?.canSendTypingEvents == true else {
             channelFeatureDisabled(feature: "typing events", completion: completion)
             return
         }
@@ -608,7 +645,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     ///
     public func sendStopTypingEvent(parentMessageId: MessageId? = nil, completion: ((Error?) -> Void)? = nil) {
         /// Ignore if typing events are not enabled
-        guard areTypingEventsEnabled else {
+        guard channel?.canSendTypingEvents == true else {
             channelFeatureDisabled(feature: "typing events", completion: completion)
             return
         }
@@ -629,6 +666,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     /// Creates a new message locally and schedules it for send.
     ///
     /// - Parameters:
+    ///   - messageId: The id for the sent message. By default, it is automatically generated by Stream..
     ///   - text: Text of the message.
     ///   - pinning: Pins the new message. `nil` if should not be pinned.
     ///   - isSilent: A flag indicating whether the message is a silent message. Silent messages are special messages that don't increase the unread messages count nor mark a channel as unread.
@@ -642,6 +680,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     ///   - completion: Called when saving the message to the local DB finishes.
     ///
     public func createNewMessage(
+        messageId: MessageId? = nil,
         text: String,
         pinning: MessagePinning? = nil,
         isSilent: Bool = false,
@@ -666,6 +705,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
 
         updater.createNewMessage(
             in: cid,
+            messageId: messageId,
             text: text,
             pinning: pinning,
             isSilent: isSilent,
@@ -690,19 +730,31 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     /// Add users to the channel as members.
     ///
     /// - Parameters:
-    ///   - users: Users Id to add to a channel.
+    ///   - userIds: User ids that will be added to a channel.
     ///   - hideHistory: Hide the history of the channel to the added member. By default, it is false.
+    ///   - message: Optional system message sent when adding members.
     ///   - completion: The completion. Will be called on a **callbackQueue** when the network request is finished.
     ///                 If request fails, the completion will be called with an error.
     ///
-    public func addMembers(userIds: Set<UserId>, hideHistory: Bool = false, completion: ((Error?) -> Void)? = nil) {
+    public func addMembers(
+        userIds: Set<UserId>,
+        hideHistory: Bool = false,
+        message: String? = nil,
+        completion: ((Error?) -> Void)? = nil
+    ) {
         /// Perform action only if channel is already created on backend side and have a valid `cid`.
         guard let cid = cid, isChannelAlreadyCreated else {
             channelModificationFailed(completion)
             return
         }
 
-        updater.addMembers(cid: cid, userIds: userIds, hideHistory: hideHistory) { error in
+        updater.addMembers(
+            currentUserId: client.currentUserId,
+            cid: cid,
+            userIds: userIds,
+            message: message,
+            hideHistory: hideHistory
+        ) { error in
             self.callback {
                 completion?(error)
             }
@@ -712,18 +764,28 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
     /// Remove users to the channel as members.
     ///
     /// - Parameters:
-    ///   - users: Users Id to add to a channel.
+    ///   - userIds: User ids that will be removed from a channel.
+    ///   - message: Optional system message sent when removing members.
     ///   - completion: The completion. Will be called on a **callbackQueue** when the network request is finished.
     ///                 If request fails, the completion will be called with an error.
     ///
-    public func removeMembers(userIds: Set<UserId>, completion: ((Error?) -> Void)? = nil) {
+    public func removeMembers(
+        userIds: Set<UserId>,
+        message: String? = nil,
+        completion: ((Error?) -> Void)? = nil
+    ) {
         /// Perform action only if channel is already created on backend side and have a valid `cid`.
         guard let cid = cid, isChannelAlreadyCreated else {
             channelModificationFailed(completion)
             return
         }
 
-        updater.removeMembers(cid: cid, userIds: userIds) { error in
+        updater.removeMembers(
+            currentUserId: client.currentUserId,
+            cid: cid,
+            userIds: userIds,
+            message: message
+        ) { error in
             self.callback {
                 completion?(error)
             }
@@ -798,7 +860,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         }
 
         /// Read events are not enabled for this channel
-        guard areReadEventsEnabled else {
+        guard channel.canReceiveReadEvents == true else {
             channelFeatureDisabled(feature: "read events", completion: completion)
             return
         }
@@ -821,6 +883,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         updater.markRead(cid: channel.cid, userId: currentUserId) { error in
             self.callback {
                 self.markingRead = false
+                self.isMarkedAsUnread = false
                 completion?(error)
             }
         }
@@ -839,7 +902,7 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
         }
 
         /// Read events are not enabled for this channel
-        guard areReadEventsEnabled else {
+        guard channel.canReceiveReadEvents == true else {
             channelFeatureDisabled(feature: "read events", completion: completion)
             return
         }
@@ -853,13 +916,16 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
 
         markingRead = true
 
-        let previousUnreadMessageId = firstUnreadMessageId
-        firstUnreadMessageId = messageId
-        updater.markUnread(cid: channel.cid, userId: currentUserId, from: messageId) { [weak self] error in
-            if error != nil {
-                self?.firstUnreadMessageId = previousUnreadMessageId
-            }
+        updater.markUnread(
+            cid: channel.cid,
+            userId: currentUserId,
+            from: messageId,
+            lastReadMessageId: getLastReadMessageId(firstUnreadMessageId: messageId)
+        ) { [weak self] error in
             self?.callback {
+                if error == nil {
+                    self?.isMarkedAsUnread = true
+                }
                 self?.markingRead = false
                 completion?(error)
             }
@@ -1107,6 +1173,34 @@ public class ChatChannelController: DataController, DelegateCallable, DataStoreP
                 }
             }
         }
+    }
+    
+    /// Deletes a file associated with the given URL in the channel.
+    /// - Parameters:
+    ///   - url: The URL of the file to be deleted.
+    ///   - completion: An optional closure to be called when the delete operation is complete.
+    ///                 If an error occurs during deletion, the error will be passed to this closure.
+    public func deleteFile(url: String, completion: ((Error?) -> Void)? = nil) {
+        guard let cid = cid, isChannelAlreadyCreated else {
+            channelModificationFailed(completion)
+            return
+        }
+        
+        updater.deleteFile(in: cid, url: url, completion: completion)
+    }
+    
+    /// Deletes an image associated with the given URL in the channel.
+    /// - Parameters:
+    ///   - url: The URL of the image to be deleted.
+    ///   - completion: An optional closure to be called when the delete operation is complete.
+    ///                 If an error occurs during deletion, the error will be passed to this closure.
+    public func deleteImage(url: String, completion: ((Error?) -> Void)? = nil) {
+        guard let cid = cid, isChannelAlreadyCreated else {
+            channelModificationFailed(completion)
+            return
+        }
+        
+        updater.deleteImage(in: cid, url: url, completion: completion)
     }
 
     // MARK: - Internal
@@ -1387,6 +1481,71 @@ private extension ChatChannelController {
             self?.state = error == nil ? .localDataFetched : .localDataFetchFailed(ClientError(with: error))
         }
     }
+
+    private func getLastReadMessageId(firstUnreadMessageId: MessageId) -> MessageId? {
+        guard let messageIndex = messages.firstIndex(where: { $0.id == firstUnreadMessageId }) else { return nil }
+
+        let newLastReadMessageIndex = messages.index(after: messageIndex)
+        return messageId(at: newLastReadMessageIndex)
+    }
+
+    private func getFirstUnreadMessageId() -> MessageId? {
+        // Return the oldest regular message if all messages are unread in the message list.
+        let oldestRegularMessage: () -> MessageId? = { [weak self] in
+            guard self?.hasLoadedAllPreviousMessages == true else {
+                return nil
+            }
+            return self?.messages.last(where: { $0.type == .regular || $0.type == .reply })?.id
+        }
+
+        guard let currentUserRead = channel?.reads.first(where: {
+            $0.user.id == client.currentUserId
+        }) else {
+            return oldestRegularMessage()
+        }
+
+        // If there are no unreads, then return nil.
+        guard currentUserRead.unreadMessagesCount > 0 else {
+            return nil
+        }
+
+        // If there unreads but no `lastReadMessageId`, it means the whole message list is unread.
+        // So the top message (oldest one) is the first unread message id.
+        guard let lastReadMessageId = currentUserRead.lastReadMessageId else {
+            return oldestRegularMessage()
+        }
+
+        guard lastReadMessageId != messages.first?.id else {
+            return nil
+        }
+
+        guard let lastReadIndex = messages.firstIndex(where: { $0.id == lastReadMessageId }), lastReadIndex != 0 else {
+            return nil
+        }
+
+        let lookUpStartIndex = messages.index(before: lastReadIndex)
+
+        var id: MessageId?
+        for index in (0...lookUpStartIndex).reversed() {
+            let message = message(at: index)
+            guard message?.author.id != client.currentUserId, message?.deletedAt == nil else { continue }
+            id = message?.id
+            break
+        }
+
+        return id
+    }
+
+    private func message(at index: Int) -> ChatMessage? {
+        if !messages.indices.contains(index) {
+            return nil
+        }
+        return messages[index]
+    }
+
+    private func messageId(at index: Int) -> MessageId? {
+        message(at: index)?.id
+    }
 }
 
 // MARK: - Errors
@@ -1423,7 +1582,45 @@ extension ClientError {
 
 // MARK: - Deprecations
 
-extension ChatChannelController {
+public extension ChatChannelController {
+    /// Indicates whether the channel has typing events enabled.
+    @available(*, deprecated, message: "`channel.canSendTypingEvents` should be used instead.")
+    var areTypingEventsEnabled: Bool {
+        channel?.canSendTypingEvents == true
+    }
+
+    /// Indicates whether the channel has reactions enabled.
+    @available(*, deprecated, message: "`channel.canSendReaction` should be used instead.")
+    var areReactionsEnabled: Bool {
+        channel?.canSendReaction == true
+    }
+
+    /// Indicates whether the channel has replies enabled.
+    @available(*, deprecated, message: "`channel.canSendReply` should be used instead.")
+    var areRepliesEnabled: Bool {
+        channel?.canSendReply == true
+    }
+
+    /// Indicates whether the channel has quotes enabled.
+    @available(*, deprecated, message: "`channel.canQuoteMessage` should be used instead.")
+    var areQuotesEnabled: Bool {
+        channel?.canQuoteMessage == true
+    }
+
+    /// Indicates whether the channel has read events enabled.
+    @available(*, deprecated, message: "`channel.canReceiveReadEvents` should be used instead.")
+    var areReadEventsEnabled: Bool {
+        channel?.canReceiveReadEvents == true
+    }
+
+    /// Indicates whether the channel supports uploading files/images.
+    @available(*, deprecated, message: "`channel.canUploadFile should be used instead.")
+    var areUploadsEnabled: Bool {
+        channel?.canUploadFile == true
+    }
+}
+
+public extension ChatChannelController {
     /// Uploads the given file to CDN and returns the file URL.
     /// - Parameters:
     ///   - localFileURL: Local URL of the file.

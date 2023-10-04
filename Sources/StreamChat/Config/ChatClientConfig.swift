@@ -186,8 +186,17 @@ public struct ChatClientConfig {
     /// whenever a new channel is created,/updated the SDK will try to
     /// match the channel list filter automatically.
     public var isChannelAutomaticFilteringEnabled: Bool = true
+    
+    /// The `URLSessionConfiguration` being used as default configuration for the `APIClient` and
+    /// `WebSocketClient`
+    public var urlSessionConfiguration: URLSessionConfiguration = .default
+    
+    /// How many hours the unsent actions should be queued for sending when the internet connection is available.
+    public var queuedActionsMaxHoursThreshold: Int = 12
 
-    public init(apiKey: APIKey) {
+    public init(
+        apiKey: APIKey
+    ) {
         self.apiKey = apiKey
         isClientInActiveMode = !Bundle.main.isAppExtension
     }

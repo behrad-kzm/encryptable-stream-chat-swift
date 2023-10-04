@@ -23,17 +23,11 @@ open class ChatMessageListView: UITableView, Customizable, ComponentsProvider {
     /// This property is especially useful when resetting the skipped messages
     /// since we want to reload the data and insert back the skipped messages, for this,
     /// we update the messages data with the one originally reported by the data controller.
-    internal var currentMessagesFromDataSource: [ChatMessage] = []
+    internal var currentMessagesFromDataSource: LazyCachedMapCollection<ChatMessage> = []
 
     /// The new messages snapshot reported by the channel or message controller.
     /// If messages are being skipped, this snapshot doesn't include skipped messages.
-    internal var newMessagesSnapshot: [ChatMessage] = [] {
-        didSet {
-            newMessagesSnapshot = newMessagesSnapshot.filter {
-                !self.skippedMessages.contains($0.id)
-            }
-        }
-    }
+    internal var newMessagesSnapshot: LazyCachedMapCollection<ChatMessage> = []
 
     /// When inserting messages at the bottom, if the user is scrolled up,
     /// we skip adding the message to the UI until the user scrolls back
@@ -164,8 +158,8 @@ open class ChatMessageListView: UITableView, Customizable, ComponentsProvider {
         return cell
     }
 
-    /// Scrolls to most recent message
-    open func scrollToMostRecentMessage(animated: Bool = true) {
+    /// Scroll to the bottom of the message list.
+    open func scrollToBottom(animated: Bool = true) {
         let rowsRange = 0..<numberOfRows(inSection: 0)
         let lastMessageIndexPath = IndexPath(row: 0, section: 0)
         let prevMessageIndexPath = IndexPath(row: 1, section: 0)
@@ -178,6 +172,14 @@ open class ChatMessageListView: UITableView, Customizable, ComponentsProvider {
         if rowsRange.contains(lastMessageIndexPath.row) {
             scrollToRow(at: lastMessageIndexPath, at: .top, animated: animated)
         }
+    }
+
+    /// Scroll to the top of the message list.
+    open func scrollToTop(animated: Bool = true) {
+        let numberOfRows = numberOfRows(inSection: 0)
+        guard numberOfRows > 0 else { return }
+        let indexPath = IndexPath(row: numberOfRows - 1, section: 0)
+        scrollToRow(at: indexPath, at: .bottom, animated: animated)
     }
 
     /// A Boolean that returns true if the bottom cell is fully visible.
@@ -195,11 +197,15 @@ open class ChatMessageListView: UITableView, Customizable, ComponentsProvider {
         with changes: [ListChange<ChatMessage>],
         completion: (() -> Void)? = nil
     ) {
+        let previousMessagesSnapshot = self.previousMessagesSnapshot
+        let newMessagesWithoutSkipped = newMessagesSnapshot.filter {
+            !self.skippedMessages.contains($0.id)
+        }
         adjustContentInsetToPositionMessagesAtTheTop()
         UIView.performWithoutAnimation {
             reloadMessages(
                 previousSnapshot: previousMessagesSnapshot,
-                newSnapshot: newMessagesSnapshot,
+                newSnapshot: newMessagesWithoutSkipped,
                 with: .fade,
                 completion: { [weak self] in
                     completion?()
@@ -214,9 +220,9 @@ open class ChatMessageListView: UITableView, Customizable, ComponentsProvider {
     internal func reloadSkippedMessages() {
         skippedMessages = []
         newMessagesSnapshot = currentMessagesFromDataSource
-        onNewDataSource?(newMessagesSnapshot)
+        onNewDataSource?(Array(newMessagesSnapshot))
         reloadData()
-        scrollToMostRecentMessage()
+        scrollToBottom()
     }
 
     /// Adjusts the content inset so that messages are inserted at the top when there are few messages.
@@ -245,6 +251,14 @@ open class ChatMessageListView: UITableView, Customizable, ComponentsProvider {
         } else {
             // no-op
         }
+    }
+
+    // MARK: - Deprecations
+
+    /// Scrolls to most recent message. (Scrolls to the bottom of the message list).
+    @available(*, deprecated, renamed: "scrollToBottom(animated:)")
+    open func scrollToMostRecentMessage(animated: Bool = true) {
+        scrollToBottom(animated: animated)
     }
 }
 

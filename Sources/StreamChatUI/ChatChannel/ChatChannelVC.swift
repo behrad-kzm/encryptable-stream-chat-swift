@@ -12,7 +12,9 @@ open class ChatChannelVC: _ViewController,
     ChatMessageListVCDataSource,
     ChatMessageListVCDelegate,
     ChatChannelControllerDelegate,
-    EventsControllerDelegate {
+    EventsControllerDelegate,
+    AudioQueuePlayerDatasource
+{
     /// Controller for observing data changes within the channel.
     open var channelController: ChatChannelController!
 
@@ -49,6 +51,17 @@ open class ChatChannelVC: _ViewController,
         .messageComposerVC
         .init()
 
+    /// The audioPlayer  that will be used for the playback of VoiceRecordings
+    open private(set) lazy var audioPlayer: AudioPlaying = components
+        .audioPlayer
+        .init()
+
+    /// The provider that will be asked to provide the next VoiceRecording to play automatically once the
+    /// currently playing one, finishes.
+    open private(set) lazy var audioQueuePlayerNextItemProvider: AudioQueuePlayerNextItemProvider = components
+        .audioQueuePlayerNextItemProvider
+        .init()
+
     /// Header View
     open private(set) lazy var headerView: ChatChannelHeaderView = components
         .channelHeaderView.init()
@@ -73,10 +86,15 @@ open class ChatChannelVC: _ViewController,
 
     /// A boolean value indicating whether it should mark the channel read.
     public var shouldMarkChannelRead: Bool {
-        guard isViewVisible(self) else {
+        guard isViewVisible(self), case .remoteDataFetched = channelController.state else {
             return false
         }
-        return isLastMessageFullyVisible && channelController.hasLoadedAllNextMessages && !hasMarkedMessageAsUnread
+
+        return isLastMessageVisibleOrSeen && hasSeenFirstUnreadMessage && channelController.hasLoadedAllNextMessages && !hasMarkedMessageAsUnread
+    }
+
+    private var isLastMessageVisibleOrSeen: Bool {
+        hasSeenLastMessage || isLastMessageFullyVisible
     }
 
     /// A component responsible to handle when to load new or old messages.
@@ -84,12 +102,24 @@ open class ChatChannelVC: _ViewController,
         InvertedScrollViewPaginationHandler.make(scrollView: messageListVC.listView)
     }()
 
+    var throttler: Throttler = Throttler(interval: 3, broadcastLatestEvent: true)
+
+    /// Determines if a messaged had been marked as unread in the current session
     private var hasMarkedMessageAsUnread: Bool {
-        channelController.firstUnreadMessageId != nil
+        channelController.isMarkedAsUnread
     }
 
+    /// Determines whether first unread message has been seen
+    private var hasSeenFirstUnreadMessage: Bool = false
+
+    /// Determines whether last cell has been seen since the last time it was marked as read
+    private var hasSeenLastMessage: Bool = false
+
     /// The id of the first unread message
-    private(set) var firstUnreadMessageId: MessageId?
+    private var firstUnreadMessageId: MessageId?
+
+    /// In case the given  around message id is from a thread, we need to jump to the parent message and then the reply.
+    private var initialReplyId: MessageId?
 
     override open func setUp() {
         super.setUp()
@@ -104,25 +134,27 @@ open class ChatChannelVC: _ViewController,
 
         setChannelControllerToComposerIfNeeded(cid: channelController.cid)
 
-        channelController.delegate = self
-        channelController.synchronize { [weak self] error in
-            if let error = error {
-                log.error("Error when synchronizing ChannelController: \(error)")
-            }
-            self?.setChannelControllerToComposerIfNeeded(cid: self?.channelController.cid)
-            self?.messageComposerVC.updateContent()
-
-            let pagination = self?.channelController.channelQuery.pagination?.parameter
-            switch pagination {
-            case let .around(messageId):
-                self?.jumpToMessage(id: messageId)
-            default:
-                break
-            }
+        // If the given message id is a reply that is inside a thread, we need
+        // to fetch the parent message, jump to the parent message and then open
+        // the thread so that we can jump to the thread reply.
+        // For this, we need to manipulate the original channel controller to contain
+        // the parent message id instead of the reply id.
+        if let initialMessageId = channelController.channelQuery.pagination?.parameter?.aroundMessageId,
+           let message = channelController.dataStore.message(id: initialMessageId),
+           let parentMessageId = getParentMessageId(forMessageInsideThread: message) {
+            initialReplyId = initialMessageId
+            channelController = makeChannelController(forParentMessageId: parentMessageId)
         }
 
-        // Initial messages data
-        messages = Array(channelController.messages)
+        channelController.delegate = self
+        channelController.synchronize { [weak self] error in
+            self?.didFinishSynchronizing(with: error)
+        }
+
+        if channelController.channelQuery.pagination?.parameter == nil {
+            // Load initial messages from cache if loading the first page
+            messages = Array(channelController.messages)
+        }
 
         // Handle pagination
         viewPaginationHandler.onNewTopPage = { [weak self] in
@@ -131,6 +163,19 @@ open class ChatChannelVC: _ViewController,
         viewPaginationHandler.onNewBottomPage = { [weak self] in
             self?.channelController.loadNextMessages()
         }
+
+        messageListVC.audioPlayer = audioPlayer
+        messageComposerVC.audioPlayer = audioPlayer
+
+        if let queueAudioPlayer = audioPlayer as? StreamAudioQueuePlayer {
+            queueAudioPlayer.dataSource = self
+        }
+
+        messageListVC.swipeToReplyGestureHandler.onReply = { [weak self] message in
+            self?.messageComposerVC.content.quoteMessage(message)
+        }
+
+        updateScrollToBottomButtonCount()
     }
 
     private func setChannelControllerToComposerIfNeeded(cid: ChannelId?) {
@@ -186,12 +231,44 @@ open class ChatChannelVC: _ViewController,
         resignFirstResponder()
     }
 
+    /// Called when the syncing of the `channelController` is finished.
+    /// - Parameter error: An `error` if the syncing failed; `nil` if it was successful.
+    open func didFinishSynchronizing(with error: Error?) {
+        if let error = error {
+            log.error("Error when synchronizing ChannelController: \(error)")
+        }
+        setChannelControllerToComposerIfNeeded(cid: channelController.cid)
+        messageComposerVC.updateContent()
+
+        if let messageId = channelController.channelQuery.pagination?.parameter?.aroundMessageId {
+            jumpToMessage(id: messageId, animated: components.shouldAnimateJumpToMessageWhenOpeningChannel)
+        }
+
+        if let replyId = initialReplyId {
+            // The delay is necessary so that the animation does not happen to quickly.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.jumpToMessage(
+                    id: replyId,
+                    animated: self.components.shouldAnimateJumpToMessageWhenOpeningChannel
+                )
+            }
+        }
+        updateAllUnreadMessagesRelatedComponents()
+    }
+
     // MARK: - Actions
 
     /// Marks the channel read and updates the UI optimistically.
     public func markRead() {
-        channelController.markRead()
-        messageListVC.scrollToLatestMessageButton.content = .noUnread
+        throttler.throttle { [weak self] in
+            self?.channelController.markRead { error in
+                if error == nil {
+                    self?.hasSeenLastMessage = false
+                }
+                self?.updateJumpToUnreadRelatedComponents()
+                self?.updateScrollToBottomButtonCount()
+            }
+        }
     }
 
     /// Jump to a given message.
@@ -202,16 +279,17 @@ open class ChatChannelVC: _ViewController,
     ///
     /// - Parameters:
     ///   - id: The id of message which the message list should go to.
+    ///   - animated: `true` if you want to animate the change in position; `false` if it should be immediate.
     ///   - shouldHighlight: Whether the message should be highlighted when jumping to it. By default it is highlighted.
-    public func jumpToMessage(id: MessageId, shouldHighlight: Bool = true) {
+    public func jumpToMessage(id: MessageId, animated: Bool = true, shouldHighlight: Bool = true) {
         if shouldHighlight {
-            messageListVC.jumpToMessage(id: id) { [weak self] indexPath in
+            messageListVC.jumpToMessage(id: id, animated: animated) { [weak self] indexPath in
                 self?.messageListVC.highlightCell(at: indexPath)
             }
             return
         }
 
-        messageListVC.jumpToMessage(id: id)
+        messageListVC.jumpToMessage(id: id, animated: animated)
     }
 
     // MARK: - ChatMessageListVCDataSource
@@ -253,12 +331,11 @@ open class ChatChannelVC: _ViewController,
         shouldLoadPageAroundMessageId messageId: MessageId,
         _ completion: @escaping ((Error?) -> Void)
     ) {
-        // For now, we don't support jumping to a message which is inside a thread only
-        if let message = channelController.dataStore.message(id: messageId) {
-            if message.isPartOfThread && !message.showReplyInChannel {
-                log.warning("Did not jump to message with text '\(message.text)' since we don't support jumping inside threads yet.")
-                return
-            }
+        if let message = channelController.dataStore.message(id: messageId),
+           let parentMessageId = getParentMessageId(forMessageInsideThread: message) {
+            let replyId = message.id
+            messageListVC.showThread(messageId: parentMessageId, at: replyId)
+            return
         }
 
         channelController.loadPageAroundMessageId(messageId, completion: completion)
@@ -276,7 +353,12 @@ open class ChatChannelVC: _ViewController,
         _ vc: ChatMessageListVC,
         willDisplayMessageAt indexPath: IndexPath
     ) {
-        // no-op
+        guard !hasSeenFirstUnreadMessage else { return }
+
+        let message = chatMessageListVC(vc, messageAt: indexPath)
+        if message?.id == firstUnreadMessageId {
+            hasSeenFirstUnreadMessage = true
+        }
     }
 
     open func chatMessageListVC(
@@ -288,6 +370,7 @@ open class ChatChannelVC: _ViewController,
         case is EditActionItem:
             dismiss(animated: true) { [weak self] in
                 self?.messageComposerVC.content.editMessage(message)
+                self?.messageComposerVC.composerView.inputMessageView.textView.becomeFirstResponder()
             }
         case is InlineReplyActionItem:
             dismiss(animated: true) { [weak self] in
@@ -299,17 +382,30 @@ open class ChatChannelVC: _ViewController,
             }
         case is MarkUnreadActionItem:
             dismiss(animated: true) { [weak self] in
-                self?.channelController.markUnread(from: message.id)
+                self?.channelController.markUnread(from: message.id) { _ in
+                    self?.updateAllUnreadMessagesRelatedComponents()
+                }
             }
         default:
             return
         }
     }
 
+    public func chatMessageListShouldShowJumpToUnread(_ vc: ChatMessageListVC) -> Bool {
+        true
+    }
+
+    public func chatMessageListDidDiscardUnreadMessages(_ vc: ChatMessageListVC) {
+        markRead()
+    }
+
     open func chatMessageListVC(
         _ vc: ChatMessageListVC,
         scrollViewDidScroll scrollView: UIScrollView
     ) {
+        if !hasSeenLastMessage && isLastMessageFullyVisible {
+            hasSeenLastMessage = true
+        }
         if shouldMarkChannelRead {
             markRead()
         }
@@ -329,7 +425,7 @@ open class ChatChannelVC: _ViewController,
         at indexPath: IndexPath
     ) -> ChatMessageDecorationView? {
         let shouldShowDate = vc.shouldShowDateSeparator(forMessage: message, at: indexPath)
-        let shouldShowUnreadMessages = message.id == firstUnreadMessageId
+        let shouldShowUnreadMessages = components.isUnreadMessagesSeparatorEnabled && message.id == firstUnreadMessageId
 
         guard (shouldShowDate || shouldShowUnreadMessages), let channel = channelController.channel else {
             return nil
@@ -361,10 +457,19 @@ open class ChatChannelVC: _ViewController,
         didUpdateMessages changes: [ListChange<ChatMessage>]
     ) {
         messageListVC.setPreviousMessagesSnapshot(messages)
-        messageListVC.setNewMessagesSnapshot(Array(channelController.messages))
+        messageListVC.setNewMessagesSnapshot(channelController.messages)
         messageListVC.updateMessages(with: changes) { [weak self] in
-            if self?.shouldMarkChannelRead == true {
-                self?.markRead()
+            guard let self = self else { return }
+
+            if let unreadCount = channelController.channel?.unreadCount.messages, channelController.firstUnreadMessageId == nil && unreadCount == 0 {
+                self.hasSeenFirstUnreadMessage = true
+            }
+
+            self.updateJumpToUnreadRelatedComponents()
+            if self.shouldMarkChannelRead {
+                self.markRead()
+            } else if !self.hasSeenFirstUnreadMessage {
+                self.updateUnreadMessagesBannerRelatedComponents()
             }
         }
     }
@@ -373,24 +478,20 @@ open class ChatChannelVC: _ViewController,
         _ channelController: ChatChannelController,
         didUpdateChannel channel: EntityChange<ChatChannel>
     ) {
-        let channelUnreadCount = channelController.channel?.unreadCount ?? .noUnread
-        messageListVC.scrollToLatestMessageButton.content = channelUnreadCount
+        updateScrollToBottomButtonCount()
 
-        guard channelController.firstUnreadMessageId != firstUnreadMessageId else { return }
-        let previousUnreadMessageId = firstUnreadMessageId
-        firstUnreadMessageId = channelController.firstUnreadMessageId
-        
-        messageListVC.updateUnreadMessagesSeparator(
-            at: firstUnreadMessageId,
-            previousId: previousUnreadMessageId
-        )
+        if headerView.channelController == nil, let cid = channelController.cid {
+            headerView.channelController = client.channelController(for: cid)
+        }
+
+        channelAvatarView.content = (channelController.channel, client.currentUserId)
     }
 
     open func channelController(
         _ channelController: ChatChannelController,
         didChangeTypingUsers typingUsers: Set<ChatUser>
     ) {
-        guard channelController.areTypingEventsEnabled else { return }
+        guard channelController.channel?.canSendTypingEvents == true else { return }
 
         let typingUsersWithoutCurrentUser = typingUsers
             .sorted { $0.id < $1.id }
@@ -412,5 +513,63 @@ open class ChatChannelVC: _ViewController,
                 channelController.loadFirstPage()
             }
         }
+    }
+
+    // MARK: - AudioQueuePlayerDatasource
+
+    open func audioQueuePlayerNextAssetURL(
+        _ audioPlayer: AudioPlaying,
+        currentAssetURL: URL?
+    ) -> URL? {
+        audioQueuePlayerNextItemProvider.findNextItem(
+            in: messages,
+            currentVoiceRecordingURL: currentAssetURL,
+            lookUpScope: .subsequentMessagesFromUser
+        )
+    }
+}
+
+// MARK: - Helpers
+
+private extension ChatChannelVC {
+    /// Returns a parent message id if the given message is a reply inside a thread only.
+    func getParentMessageId(forMessageInsideThread message: ChatMessage) -> MessageId? {
+        guard message.isPartOfThread && !message.showReplyInChannel else {
+            return nil
+        }
+
+        return message.parentMessageId
+    }
+
+    func makeChannelController(forParentMessageId parentMessageId: MessageId) -> ChatChannelController {
+        var newQuery = channelController.channelQuery
+        let pageSize = newQuery.pagination?.pageSize ?? .messagesPageSize
+        newQuery.pagination = MessagesPagination(pageSize: pageSize, parameter: .around(parentMessageId))
+        return client.channelController(
+            for: newQuery,
+            channelListQuery: channelController.channelListQuery,
+            messageOrdering: channelController.messageOrdering
+        )
+    }
+
+    func updateAllUnreadMessagesRelatedComponents() {
+        updateScrollToBottomButtonCount()
+        updateJumpToUnreadRelatedComponents()
+        updateUnreadMessagesBannerRelatedComponents()
+    }
+
+    func updateScrollToBottomButtonCount() {
+        let channelUnreadCount = channelController.channel?.unreadCount ?? .noUnread
+        messageListVC.scrollToBottomButton.content = channelUnreadCount
+    }
+
+    func updateJumpToUnreadRelatedComponents() {
+        messageListVC.updateJumpToUnreadMessageId(channelController.firstUnreadMessageId)
+        messageListVC.updateJumpToUnreadButtonVisibility()
+    }
+
+    func updateUnreadMessagesBannerRelatedComponents() {
+        firstUnreadMessageId = channelController.firstUnreadMessageId
+        messageListVC.updateUnreadMessagesSeparator(at: firstUnreadMessageId)
     }
 }

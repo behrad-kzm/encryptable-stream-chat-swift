@@ -140,6 +140,7 @@ final class ChannelDTO_Tests: XCTestCase {
         let anotherMemberRead: ChannelReadPayload = .init(
             user: anotherMember.user!,
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -194,6 +195,7 @@ final class ChannelDTO_Tests: XCTestCase {
         let read1 = ChannelReadPayload(
             user: .dummy(userId: .unique),
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -210,6 +212,7 @@ final class ChannelDTO_Tests: XCTestCase {
         let read2 = ChannelReadPayload(
             user: .dummy(userId: .unique),
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -501,6 +504,11 @@ final class ChannelDTO_Tests: XCTestCase {
     }
 
     func test_channelPayload_nilMembershipRemovesExistingMembership() throws {
+        try XCTSkipIf(
+            ProcessInfo().operatingSystemVersion.majorVersion < 15,
+            "https://github.com/GetStream/ios-issues-tracking/issues/515"
+        )
+        
         // Save a channel payload with 100 messages
         let channelId: ChannelId = .unique
         let payload = dummyPayload(with: channelId, numberOfMessages: 100)
@@ -524,6 +532,11 @@ final class ChannelDTO_Tests: XCTestCase {
     }
 
     func test_channelPayload_latestMessagesArePopulated() throws {
+        try XCTSkipIf(
+            ProcessInfo().operatingSystemVersion.majorVersion < 15,
+            "https://github.com/GetStream/ios-issues-tracking/issues/515"
+        )
+        
         // Save a channel payload with 100 messages
         let channelId: ChannelId = .unique
         let payload = dummyPayload(with: channelId, numberOfMessages: 100)
@@ -538,6 +551,11 @@ final class ChannelDTO_Tests: XCTestCase {
     }
 
     func test_channelPayload_pinnedMessagesArePopulated() throws {
+        try XCTSkipIf(
+            ProcessInfo().operatingSystemVersion.majorVersion < 15,
+            "https://github.com/GetStream/ios-issues-tracking/issues/515"
+        )
+        
         let channelId: ChannelId = .unique
         let pinnedMessages: [MessagePayload] = [
             .dummy(messageId: .unique, authorUserId: .unique, pinned: true),
@@ -594,6 +612,11 @@ final class ChannelDTO_Tests: XCTestCase {
     }
     
     func test_channelPayload_truncatedMessagesAreIgnored() throws {
+        try XCTSkipIf(
+            ProcessInfo().operatingSystemVersion.majorVersion < 15,
+            "https://github.com/GetStream/ios-issues-tracking/issues/515"
+        )
+        
         // Save a channel payload with 100 messages
         let channelId: ChannelId = .unique
         let payload = dummyPayload(with: channelId, numberOfMessages: 100)
@@ -618,6 +641,11 @@ final class ChannelDTO_Tests: XCTestCase {
     }
 
     func test_channelPayload_pinnedMessagesOlderThanOldestMessageAtAreIgnored() throws {
+        try XCTSkipIf(
+            ProcessInfo().operatingSystemVersion.majorVersion < 15,
+            "https://github.com/GetStream/ios-issues-tracking/issues/515"
+        )
+        
         let channelId: ChannelId = .unique
         let oldPinnedMessage: MessagePayload = MessagePayload(
             id: .unique,
@@ -686,6 +714,11 @@ final class ChannelDTO_Tests: XCTestCase {
     }
 
     func test_channelPayload_localCachingDefaults() throws {
+        try XCTSkipIf(
+            ProcessInfo().operatingSystemVersion.majorVersion < 15,
+            "https://github.com/GetStream/ios-issues-tracking/issues/515"
+        )
+        
         // This is just a temp fix. The CI tends to fail if there are multiple Database instance alive at the same time.
         // -> CIS-756
         AssertAsync.canBeReleased(&database)
@@ -1050,6 +1083,7 @@ final class ChannelDTO_Tests: XCTestCase {
         let currentUserChannelReadPayload: ChannelReadPayload = .init(
             user: currentUserPayload,
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -1335,7 +1369,7 @@ final class ChannelDTO_Tests: XCTestCase {
 
         try database.writeSynchronously { session in
             try session.saveChannel(payload: channelPayload)
-            let currentUser = try session.saveCurrentUser(payload: .dummy(userId: userId, role: .user))
+            try session.saveCurrentUser(payload: .dummy(userId: userId, role: .user))
         }
 
         // WHEN

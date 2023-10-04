@@ -64,4 +64,33 @@ final class Attachments_Tests: StreamTestCase {
             userRobot.assertVideo(isPresent: true)
         }
     }
+    
+    func test_restartImageUpload() throws {
+        linkToScenario(withId: 2195)
+
+        try XCTSkipIf(
+            UIDevice.current.userInterfaceIdiom == .pad || ProcessInfo().operatingSystemVersion.majorVersion == 12,
+            "Flaky on iPad and iOS 12"
+        )
+
+        GIVEN("user opens the channel") {
+            userRobot
+                .setConnectivitySwitchVisibility(to: .on)
+                .login()
+                .openChannel()
+        }
+        WHEN("user sends an image beeing offline") {
+            userRobot
+                .setConnectivity(to: .off)
+                .uploadImage()
+        }
+        AND("user restarts an image upload being online") {
+            userRobot
+                .setConnectivity(to: .on)
+                .restartImageUpload()
+        }
+        THEN("user can see uploaded image") {
+            userRobot.assertImage(isPresent: true)
+        }
+    }
 }

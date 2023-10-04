@@ -54,6 +54,7 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
             && content.message.linkAttachments.isEmpty
             && content.message.giphyAttachments.isEmpty
             && content.message.videoAttachments.isEmpty
+            && content.message.voiceRecordingAttachments.isEmpty
     }
 
     /// The container view that holds the `authorAvatarView` and the `contentContainerView`.
@@ -82,6 +83,12 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
     open private(set) lazy var attachmentPreviewView: UIImageView = UIImageView()
         .withoutAutoresizingMaskConstraints
         .withAccessibilityIdentifier(identifier: "attachmentPreviewView")
+
+    open private(set) lazy var voiceRecordingAttachmentQuotedPreview: VoiceRecordingAttachmentQuotedPreview =
+        components
+            .voiceRecordingAttachmentQuotedPreview
+            .init()
+            .withoutAutoresizingMaskConstraints
 
     /// The size of the avatar view that belongs to the author of the quoted message.
     open var authorAvatarSize: CGSize { .init(width: 24, height: 24) }
@@ -134,6 +141,7 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
         containerView.addArrangedSubview(contentContainerView)
 
         contentContainerView.addArrangedSubview(attachmentPreviewView)
+        contentContainerView.addArrangedSubview(voiceRecordingAttachmentQuotedPreview)
         contentContainerView.addArrangedSubview(textView)
 
         NSLayoutConstraint.activate([
@@ -148,6 +156,8 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
 
         attachmentPreviewView.layer.cornerRadius = attachmentPreviewSize.width / 4
         attachmentPreviewView.layer.masksToBounds = true
+
+        voiceRecordingAttachmentQuotedPreview.isHidden = true
     }
 
     override open func updateContent() {
@@ -233,8 +243,23 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
             textView.text = message.text.isEmpty ? "Giphy" : message.text
         } else if let videoPayload = message.videoAttachments.first?.payload {
             attachmentPreviewView.contentMode = .scaleAspectFill
-            setVideoAttachmentPreviewImage(url: videoPayload.videoURL)
+            if let thumbnailURL = videoPayload.thumbnailURL {
+                setVideoAttachmentThumbnail(url: thumbnailURL)
+            } else {
+                setVideoAttachmentPreviewImage(url: videoPayload.videoURL)
+            }
             textView.text = message.text.isEmpty ? videoPayload.title : message.text
+        } else if let voiceRecordingPayload = message.voiceRecordingAttachments.first?.payload {
+            voiceRecordingAttachmentQuotedPreview.content = .init(
+                title: voiceRecordingPayload.title ?? message.text,
+                size: voiceRecordingPayload.file.size,
+                duration: voiceRecordingPayload.duration ?? 0,
+                audioAssetURL: voiceRecordingPayload.voiceRecordingURL
+            )
+            textView.text = nil
+        } else {
+            voiceRecordingAttachmentQuotedPreview.isHidden = true
+            contentContainerView.isHidden = false
         }
     }
 
@@ -246,6 +271,19 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
             from: url,
             with: ImageLoaderOptions(resize: .init(attachmentPreviewSize))
         )
+    }
+
+    /// Set the image from the given URL into `attachmentPreviewImage.image`
+    /// - Parameter url: The URL of the thumbnail
+    open func setVideoAttachmentThumbnail(url: URL) {
+        components.imageLoader.downloadImage(with: .init(url: url, options: ImageDownloadOptions())) { [weak self] result in
+            switch result {
+            case let .success(preview):
+                self?.attachmentPreviewView.image = preview
+            case .failure:
+                self?.attachmentPreviewView.image = nil
+            }
+        }
     }
 
     /// Set the image from the given URL into `attachmentPreviewImage.image`
@@ -266,8 +304,10 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
 
     /// Show the attachment preview view.
     open func showAttachmentPreview() {
+        let containsVoiceRecording = content?.message.voiceRecordingAttachments.isEmpty == false
         Animate {
-            self.attachmentPreviewView.isHidden = false
+            self.voiceRecordingAttachmentQuotedPreview.isHidden = !containsVoiceRecording
+            self.attachmentPreviewView.isHidden = containsVoiceRecording
         }
     }
 
@@ -275,6 +315,7 @@ open class QuotedChatMessageView: _View, ThemeProvider, SwiftUIRepresentable {
     open func hideAttachmentPreview() {
         Animate {
             self.attachmentPreviewView.isHidden = true
+            self.voiceRecordingAttachmentQuotedPreview.isHidden = true
         }
     }
 }

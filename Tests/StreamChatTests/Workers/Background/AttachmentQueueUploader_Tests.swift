@@ -51,7 +51,8 @@ final class AttachmentQueueUploader_Tests: XCTestCase {
             .mockFile,
             .mockImage,
             .mockVideo,
-            .mockAudio
+            .mockAudio,
+            .mockVoiceRecording
         ]
 
         for (index, envelope) in attachmentPayloads.enumerated() {
@@ -127,7 +128,18 @@ final class AttachmentQueueUploader_Tests: XCTestCase {
                     // Assert `attachment.assetURL` is set.
                     Assert.willBeEqual(originalURLString(audioModel?.audioURL), remoteUrl.absoluteString)
                 }
-            default: throw TestError()
+            case .voiceRecording:
+                var audioModel: ChatMessageVoiceRecordingAttachment? {
+                    attachment.asAnyModel().attachment(payloadType: VoiceRecordingAttachmentPayload.self)
+                }
+                AssertAsync {
+                    // Assert attachment state eventually becomes `.uploaded`.
+                    Assert.willBeEqual(audioModel?.uploadingState?.state, .uploaded)
+                    // Assert `attachment.assetURL` is set.
+                    Assert.willBeEqual(originalURLString(audioModel?.voiceRecordingURL), remoteUrl.absoluteString)
+                }
+            default:
+                throw TestError()
             }
         }
     }
@@ -199,7 +211,7 @@ final class AttachmentQueueUploader_Tests: XCTestCase {
                     payload.extraData = ["test": 123]
                 }
 
-                return UploadedAttachment(attachment: attachment, remoteURL: uploadedAttachment.remoteURL)
+                return UploadedAttachment(attachment: attachment, remoteURL: uploadedAttachment.remoteURL, thumbnailURL: uploadedAttachment.thumbnailURL)
             }
         }
 
@@ -251,6 +263,127 @@ final class AttachmentQueueUploader_Tests: XCTestCase {
             Assert.willBeEqual(imageModel?.title, "New Title")
             Assert.willBeEqual(imageModel?.extraData, ["test": 123])
         }
+    }
+
+    func test_attachmentsAreCopiedToSandbox_beforeBeingSent() throws {
+        // GIVEN
+        let cid: ChannelId = .unique
+        let messageId: MessageId = .unique
+        let attachmentId: AttachmentId = .init(cid: cid, messageId: messageId, index: 0)
+
+        let fileManager = FileManager.default
+        let fileContent = "This is the file content"
+        let fileName = "Test.txt"
+
+        // Save a temporary file for the attachment to be sent
+        let fileData = try XCTUnwrap(fileContent.data(using: .utf8))
+        let folderURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let temporaryFileURL = folderURL.appendingPathComponent(fileName)
+        try fileData.write(to: temporaryFileURL)
+
+        let documentsURL = try XCTUnwrap(fileManager.urls(for: .documentDirectory, in: .userDomainMask).first)
+        let attachmentsDirectory = documentsURL.appendingPathComponent("LocalAttachments")
+        var locallyStoredAttachments: [URL] {
+            (try? fileManager.contentsOfDirectory(at: attachmentsDirectory, includingPropertiesForKeys: nil)) ?? []
+        }
+        try locallyStoredAttachments.forEach(fileManager.removeItem)
+
+        // WHEN
+        // Create an attachment using the temporary file
+        let attachment = AnyAttachmentPayload.mock(type: .file, localFileURL: temporaryFileURL)
+        try database.createChannel(cid: cid, withMessages: false)
+        try database.createMessage(id: messageId, cid: cid, localState: .pendingSend)
+        try database.writeSynchronously { session in
+            try session.createNewAttachment(attachment: attachment, id: attachmentId)
+        }
+
+        // THEN
+        let attachmentDTO = try XCTUnwrap(database.viewContext.attachment(id: attachmentId))
+
+        wait(for: [apiClient.uploadRequest_expectation], timeout: defaultTimeout)
+
+        XCTAssertEqual(locallyStoredAttachments.count, 1)
+        XCTAssertEqual(locallyStoredAttachments.first?.lastPathComponent, fileName)
+        XCTAssertEqual(attachmentDTO.localState, .pendingUpload)
+
+        // Simulate attachment upload
+        let mockedRemoteURL = documentsURL.appendingPathComponent("mock-remote-url")
+        apiClient.uploadFile_completion!(.success(.dummy(remoteURL: mockedRemoteURL)))
+
+        AssertAsync.willBeTrue(attachmentDTO.localState == .uploaded)
+        XCTAssertEqual(locallyStoredAttachments.count, 0)
+    }
+
+    func test_multipleAttachmentsAreCopiedToSandbox_onlySuccessfulOnesAreRemoved() throws {
+        let fileManager = FileManager.default
+        // GIVEN
+        let cid: ChannelId = .unique
+        let messageId: MessageId = .unique
+
+        let documentsURL = try XCTUnwrap(fileManager.urls(for: .documentDirectory, in: .userDomainMask).first)
+        var locallyStoredAttachments: [URL] {
+            let attachmentsDirectory = documentsURL.appendingPathComponent("LocalAttachments")
+            return (try? fileManager.contentsOfDirectory(at: attachmentsDirectory, includingPropertiesForKeys: nil)) ?? []
+        }
+
+        func saveFile(for attachmentId: AttachmentId, fileName: String) throws -> URL {
+            let fileData = try XCTUnwrap("This is the file content".data(using: .utf8))
+            let folderURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+            let temporaryFileURL = folderURL.appendingPathComponent(fileName)
+            try fileData.write(to: temporaryFileURL)
+            return temporaryFileURL
+        }
+
+        func completeUploadRequest(with result: Result<UploadedAttachment, Error>) throws {
+            try XCTUnwrap(apiClient.uploadFile_completion)(result)
+        }
+
+        let attachmentId1: AttachmentId = .init(cid: cid, messageId: messageId, index: 0)
+        let attachmentId2: AttachmentId = .init(cid: cid, messageId: messageId, index: 1)
+        let fileName1 = "Test\(attachmentId1.index).txt"
+        let fileName2 = "Test\(attachmentId2.index).txt"
+
+        let temporaryFileURL1 = try saveFile(for: attachmentId1, fileName: fileName1)
+        let temporaryFileURL2 = try saveFile(for: attachmentId2, fileName: fileName2)
+        try locallyStoredAttachments.forEach(fileManager.removeItem)
+
+        // WHEN
+        // Create channel and message
+        try database.createChannel(cid: cid, withMessages: false)
+        try database.createMessage(id: messageId, cid: cid, localState: .pendingSend)
+
+        // Save first attachment
+        try database.writeSynchronously { session in
+            let attachment = AnyAttachmentPayload.mock(type: .file, localFileURL: temporaryFileURL1)
+            try session.createNewAttachment(attachment: attachment, id: attachmentId1)
+        }
+
+        wait(for: [apiClient.uploadRequest_expectation], timeout: defaultTimeout)
+        try completeUploadRequest(with: .failure(TestError()))
+
+        apiClient.cleanUp()
+
+        // Save first attachment
+        try database.writeSynchronously { session in
+            let attachment = AnyAttachmentPayload.mock(type: .file, localFileURL: temporaryFileURL2)
+            try session.createNewAttachment(attachment: attachment, id: attachmentId2)
+        }
+
+        wait(for: [apiClient.uploadRequest_expectation], timeout: defaultTimeout)
+        let mockedRemoteURL2 = documentsURL.appendingPathComponent("mock-remote-url")
+        try completeUploadRequest(with: .success(.dummy(remoteURL: mockedRemoteURL2)))
+
+        // THEN
+        let attachmentDTO1 = try XCTUnwrap(database.viewContext.attachment(id: attachmentId1))
+        let attachmentDTO2 = try XCTUnwrap(database.viewContext.attachment(id: attachmentId2))
+
+        AssertAsync.willBeTrue(attachmentDTO1.localState == .uploadingFailed)
+        AssertAsync.willBeTrue(attachmentDTO2.localState == .uploaded)
+
+        XCTAssertEqual(locallyStoredAttachments.count, 1)
+        XCTAssertEqual(locallyStoredAttachments.first?.lastPathComponent, fileName1)
     }
 }
 

@@ -46,6 +46,10 @@ extension Filter where Scope == ChannelListFilterScope {
             return nil
         }
 
+        if let overridePredicate = predicateMapper?(op, mappedValue) {
+            return overridePredicate
+        }
+
         switch op {
         case .equal, .notEqual, .greater, .greaterOrEqual, .less, .lessOrEqual:
             return comparingPredicate(op)
@@ -104,13 +108,13 @@ extension Filter where Scope == ChannelListFilterScope {
         switch op {
         case .equal:
             return NSPredicate(
-                format: "%@ == %K",
-                argumentArray: [mappedValue, keyPathString]
+                format: "%K == %@",
+                argumentArray: [keyPathString, mappedValue]
             )
         case .notEqual:
             return NSPredicate(
-                format: "%@ != %K",
-                argumentArray: [mappedValue, keyPathString]
+                format: "%K != %@",
+                argumentArray: [keyPathString, mappedValue]
             )
         case .greater:
             return NSPredicate(
@@ -180,7 +184,7 @@ extension Filter where Scope == ChannelListFilterScope {
                 return nil
             }
             return NSPredicate(
-                format: "%K BEGINSWITH[c] %@".prepend(("ANY "), ifCondition: isCollectionFilter),
+                format: "%K CONTAINS[c] %@".prepend(("ANY "), ifCondition: isCollectionFilter),
                 argumentArray: [keyPathString, prefix]
             )
         case .contains where mappedValue is String:

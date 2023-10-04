@@ -15,6 +15,10 @@ final class ChannelUpdater_Mock: ChannelUpdater {
     @Atomic var updateChannel_payload: ChannelEditDetailPayload?
     @Atomic var updateChannel_completion: ((Error?) -> Void)?
 
+    @Atomic var partialChannelUpdate_updates: ChannelEditDetailPayload?
+    @Atomic var partialChannelUpdate_unsetProperties: [String]?
+    @Atomic var partialChannelUpdate_completion: ((Error?) -> Void)?
+
     @Atomic var muteChannel_cid: ChannelId?
     @Atomic var muteChannel_mute: Bool?
     @Atomic var muteChannel_completion: ((Error?) -> Void)?
@@ -76,6 +80,7 @@ final class ChannelUpdater_Mock: ChannelUpdater {
     @Atomic var markUnread_cid: ChannelId?
     @Atomic var markUnread_userId: UserId?
     @Atomic var markUnread_messageId: MessageId?
+    @Atomic var markUnread_lastReadMessageId: MessageId?
     @Atomic var markUnread_completion: ((Error?) -> Void)?
 
     @Atomic var enableSlowMode_cid: ChannelId?
@@ -221,6 +226,12 @@ final class ChannelUpdater_Mock: ChannelUpdater {
         updateChannel_completion = completion
     }
 
+    override func partialChannelUpdate(updates: ChannelEditDetailPayload, unsetProperties: [String], completion: ((Error?) -> Void)? = nil) {
+        partialChannelUpdate_updates = updates
+        partialChannelUpdate_unsetProperties = unsetProperties
+        partialChannelUpdate_completion = completion
+    }
+
     override func muteChannel(cid: ChannelId, mute: Bool, completion: ((Error?) -> Void)? = nil) {
         muteChannel_cid = cid
         muteChannel_mute = mute
@@ -259,6 +270,7 @@ final class ChannelUpdater_Mock: ChannelUpdater {
 
     override func createNewMessage(
         in cid: ChannelId,
+        messageId: MessageId?,
         text: String,
         pinning: MessagePinning?,
         isSilent: Bool,
@@ -287,7 +299,14 @@ final class ChannelUpdater_Mock: ChannelUpdater {
         createNewMessage_completion = completion
     }
 
-    override func addMembers(cid: ChannelId, userIds: Set<UserId>, hideHistory: Bool, completion: ((Error?) -> Void)? = nil) {
+    override func addMembers(
+        currentUserId: UserId?,
+        cid: ChannelId,
+        userIds: Set<UserId>,
+        message: String?,
+        hideHistory: Bool,
+        completion: ((Error?) -> Void)? = nil
+    ) {
         addMembers_cid = cid
         addMembers_userIds = userIds
         addMembers_hideHistory = hideHistory
@@ -322,7 +341,13 @@ final class ChannelUpdater_Mock: ChannelUpdater {
         rejectInvite_completion = completion
     }
 
-    override func removeMembers(cid: ChannelId, userIds: Set<UserId>, completion: ((Error?) -> Void)? = nil) {
+    override func removeMembers(
+        currentUserId: UserId?,
+        cid: ChannelId,
+        userIds: Set<UserId>,
+        message: String?,
+        completion: ((Error?) -> Void)? = nil
+    ) {
         removeMembers_cid = cid
         removeMembers_userIds = userIds
         removeMembers_completion = completion
@@ -334,10 +359,11 @@ final class ChannelUpdater_Mock: ChannelUpdater {
         markRead_completion = completion
     }
 
-    override func markUnread(cid: ChannelId, userId: UserId, from messageId: MessageId, completion: ((Error?) -> Void)? = nil) {
+    override func markUnread(cid: ChannelId, userId: UserId, from messageId: MessageId, lastReadMessageId: MessageId?, completion: ((Error?) -> Void)? = nil) {
         markUnread_cid = cid
         markUnread_userId = userId
         markUnread_messageId = messageId
+        markUnread_lastReadMessageId = lastReadMessageId
         markUnread_completion = completion
     }
 

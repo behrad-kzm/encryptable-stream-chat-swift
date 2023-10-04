@@ -3,6 +3,7 @@
 //
 
 import Foundation
+import CoreData.NSManagedObjectContext
 @testable import StreamChat
 
 public extension ChatMessage {
@@ -31,15 +32,18 @@ public extension ChatMessage {
         reactionCounts: [MessageReactionType: Int] = [:],
         mentionedUsers: Set<ChatUser> = [],
         threadParticipants: [ChatUser] = [],
+        threadParticipantsCount: Int = 0,
         attachments: [AnyChatMessageAttachment] = [],
         latestReplies: [ChatMessage] = [],
         localState: LocalMessageState? = nil,
         isFlaggedByCurrentUser: Bool = false,
         latestReactions: Set<ChatMessageReaction> = [],
         currentUserReactions: Set<ChatMessageReaction> = [],
+        currentUserReactionsCount: Int = 0,
         isSentByCurrentUser: Bool = false,
         pinDetails: MessagePinDetails? = nil,
-        readBy: Set<ChatUser> = []
+        readBy: Set<ChatUser> = [],
+        underlyingContext: NSManagedObjectContext? = nil
     ) -> Self {
         .init(
             id: id,
@@ -65,18 +69,20 @@ public extension ChatMessage {
             author: { author },
             mentionedUsers: { mentionedUsers },
             threadParticipants: { threadParticipants },
+            threadParticipantsCount: { threadParticipantsCount },
             attachments: { attachments },
             latestReplies: { latestReplies },
             localState: localState,
             isFlaggedByCurrentUser: isFlaggedByCurrentUser,
             latestReactions: { latestReactions },
             currentUserReactions: { currentUserReactions },
+            currentUserReactionsCount: { currentUserReactionsCount },
             isSentByCurrentUser: isSentByCurrentUser,
             pinDetails: pinDetails,
             translations: nil,
             readBy: { readBy },
             readByCount: { readBy.count },
-            underlyingContext: nil
+            underlyingContext: underlyingContext
         )
     }
 }

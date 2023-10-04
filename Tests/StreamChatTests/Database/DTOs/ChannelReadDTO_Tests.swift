@@ -22,6 +22,33 @@ final class ChannelReadDTO_Tests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - saveChannelRead
+
+    func test_saveChannelReadPayload() throws {
+        // GIVEN
+        let userId = UserId.unique
+        let lastReadAt = Date.unique
+        let lastReadMessageId = MessageId.unique
+        let unreadMessagesCount = 8
+        let channelId = ChannelId.unique
+        let payload = ChannelReadPayload(
+            user: dummyUser(id: userId),
+            lastReadAt: lastReadAt,
+            lastReadMessageId: lastReadMessageId,
+            unreadMessagesCount: unreadMessagesCount
+        )
+
+        // WHEN
+        _ = try database.viewContext.saveChannelRead(payload: payload, for: channelId, cache: nil)
+
+        // THEN
+        let readDTO = try XCTUnwrap(ChannelReadDTO.load(cid: channelId, userId: payload.user.id, context: database.viewContext))
+        XCTAssertEqual(readDTO.unreadMessageCount, Int32(unreadMessagesCount))
+        XCTAssertEqual(readDTO.user.id, userId)
+        XCTAssertEqual(readDTO.lastReadMessageId, lastReadMessageId)
+        XCTAssertEqual(readDTO.lastReadAt.description, lastReadAt.description)
+    }
+
     // MARK: - markChannelAsRead
 
     func test_markChannelAsRead_whenReadExists_isIsUpdated() throws {
@@ -29,6 +56,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let read = ChannelReadPayload(
             user: .dummy(userId: .unique),
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 10
         )
 
@@ -122,6 +150,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let anotherUserRead = ChannelReadPayload(
             user: anotherUser,
             lastReadAt: anotherUserMessage.createdAt.addingTimeInterval(-1),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 0
         )
 
@@ -167,7 +196,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         }
 
         // THEN
-        XCTAssertEqual(observer.updatedMessageIDs, [ownMessageUnreadByAnotherUser.id])
+        XCTAssertEqual(observer.updatedMessageDTOs.map(\.id), [ownMessageUnreadByAnotherUser.id])
     }
 
     func test_markChannelAsRead_whenMemberReadDoesNotExist_allOwnMessagesAreUpdated() throws {
@@ -218,7 +247,8 @@ final class ChannelReadDTO_Tests: XCTestCase {
         }
 
         // THEN
-        XCTAssertEqual(observer.updatedMessageIDs, [ownMessage1.id, ownMessage2.id])
+        let messageDTOsThatContainReads = observer.updatedMessageDTOs.filter { !$0.reads.isEmpty }.map(\.id)
+        XCTAssertEqual(Set(messageDTOsThatContainReads), Set([ownMessage1.id, ownMessage2.id]))
     }
 
     func test_markChannelAsRead_ownRead_doesNotTriggerOwnMessagesUpdate() throws {
@@ -269,7 +299,8 @@ final class ChannelReadDTO_Tests: XCTestCase {
         }
 
         // THEN
-        XCTAssertTrue(observer.updatedMessageIDs.isEmpty)
+        let messageDTOsThatContainReads = observer.updatedMessageDTOs.filter { !$0.reads.isEmpty }.map(\.id)
+        XCTAssertTrue(messageDTOsThatContainReads.isEmpty)
     }
 
     // MARK: - markChannelAsUnread - partial
@@ -282,7 +313,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
 
         // WHEN
         try database.writeSynchronously { session in
-            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadAt: nil, unreadMessagesCount: nil)
+            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadMessageId: .unique, lastReadAt: nil, unreadMessagesCount: nil)
         }
 
         // THEN
@@ -300,6 +331,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let read = ChannelReadPayload(
             user: member.user!,
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 10
         )
 
@@ -317,7 +349,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
 
         // WHEN
         try database.writeSynchronously { session in
-            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadAt: nil, unreadMessagesCount: nil)
+            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadMessageId: .unique, lastReadAt: nil, unreadMessagesCount: nil)
         }
 
         // THEN
@@ -331,11 +363,13 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let cid = ChannelId.unique
         let userId = UserId.unique
         let messageId = MessageId.unique
+        let lastReadMessageId = MessageId.unique
 
         let member: MemberPayload = .dummy(user: .dummy(userId: userId))
         let read = ChannelReadPayload(
             user: member.user!,
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 10
         )
         let firstMessageDate = Date()
@@ -358,7 +392,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
 
         // WHEN
         try database.writeSynchronously { session in
-            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadAt: nil, unreadMessagesCount: nil)
+            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadMessageId: lastReadMessageId, lastReadAt: nil, unreadMessagesCount: nil)
         }
 
         // THEN
@@ -366,6 +400,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let readDTO = try XCTUnwrap(readDTO(cid: cid, userId: userId))
         XCTAssertNearlySameDate(readDTO.lastReadAt.bridgeDate, firstMessageDate)
         XCTAssertEqual(readDTO.unreadMessageCount, 3)
+        XCTAssertEqual(readDTO.lastReadMessageId, lastReadMessageId)
         XCTAssertNotNil(database.viewContext.message(id: messageId))
     }
 
@@ -374,11 +409,13 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let cid = ChannelId.unique
         let userId = UserId.unique
         let messageId = MessageId.unique
+        let lastReadMessageId = MessageId.unique
 
         let member: MemberPayload = .dummy(user: .dummy(userId: userId))
         let read = ChannelReadPayload(
             user: member.user!,
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 10
         )
         let firstMessageDate = Date()
@@ -404,7 +441,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
 
         // WHEN
         try database.writeSynchronously { session in
-            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadAt: passedLastReadAt, unreadMessagesCount: passedUnreadMessagesCount)
+            session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadMessageId: lastReadMessageId, lastReadAt: passedLastReadAt, unreadMessagesCount: passedUnreadMessagesCount)
         }
 
         // THEN
@@ -418,6 +455,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         // Assert passed values take precedence
         XCTAssertNearlySameDate(readDTO.lastReadAt.bridgeDate, passedLastReadAt)
         XCTAssertEqual(readDTO.unreadMessageCount, Int32(passedUnreadMessagesCount))
+        XCTAssertEqual(readDTO.lastReadMessageId, lastReadMessageId)
 
         XCTAssertNotNil(database.viewContext.message(id: messageId))
     }
@@ -430,6 +468,7 @@ final class ChannelReadDTO_Tests: XCTestCase {
         let read = ChannelReadPayload(
             user: member.user!,
             lastReadAt: .init(),
+            lastReadMessageId: .unique,
             unreadMessagesCount: 10
         )
 
@@ -459,20 +498,81 @@ final class ChannelReadDTO_Tests: XCTestCase {
     private func readDTO(cid: ChannelId, userId: UserId) -> ChannelReadDTO? {
         ChannelReadDTO.load(cid: cid, userId: userId, context: database.viewContext)
     }
+
+    // MARK: - loadOrCreateChannelRead
+
+    func test_loadOrCreateChannelRead_channelReadExists_returnsExpectedResult() throws {
+        // GIVEN
+        let lastReadAt = Date.unique
+        let read = ChannelReadPayload(
+            user: .dummy(userId: .unique),
+            lastReadAt: lastReadAt,
+            lastReadMessageId: .unique,
+            unreadMessagesCount: 10
+        )
+
+        let channel: ChannelPayload = .dummy(
+            members: [.dummy(user: read.user)],
+            channelReads: [read]
+        )
+
+        try database.writeSynchronously { session in
+            try session.saveChannel(payload: channel)
+        }
+
+        // WHEN
+        let loadedRead = try XCTUnwrap(
+            database.viewContext.loadOrCreateChannelRead(
+                cid: channel.channel.cid,
+                userId: read.user.id
+            )
+        )
+
+        // THEN
+        XCTAssertEqual(loadedRead.user.id, read.user.id)
+        XCTAssertEqual(loadedRead.lastReadAt.bridgeDate, read.lastReadAt)
+        XCTAssertTrue(loadedRead.unreadMessageCount == read.unreadMessagesCount)
+    }
+
+    func test_loadOrCreateChannelRead_channelReadNotExist_returnsExpectedResult() throws {
+        // GIVEN
+        let user = UserPayload.dummy(userId: .unique)
+
+        let channel: ChannelPayload = .dummy(
+            members: [.dummy(user: user)],
+            channelReads: []
+        )
+
+        try database.writeSynchronously { session in
+            try session.saveChannel(payload: channel)
+        }
+
+        // WHEN
+        let loadedRead = try XCTUnwrap(
+            database.viewContext.loadOrCreateChannelRead(
+                cid: channel.channel.cid,
+                userId: user.id
+            )
+        )
+
+        // THEN
+        XCTAssertEqual(loadedRead.user.id, user.id)
+        XCTAssertTrue(loadedRead.unreadMessageCount == 0)
+    }
 }
 
 // MARK: - Helpers
 
 private class MessageListObserver {
-    let databaseObserver: ListDatabaseObserver<MessageId, MessageDTO>
+    let databaseObserver: ListDatabaseObserver<MessageDTO, MessageDTO>
 
-    var observedChanges: [ListChange<MessageId>] = []
+    var observedChanges: [ListChange<MessageDTO>] = []
 
-    var updatedMessageIDs: Set<MessageId> {
+    var updatedMessageDTOs: Set<MessageDTO> {
         Set(
             observedChanges.compactMap {
-                guard case let .update(messageId, _) = $0 else { return nil }
-                return messageId
+                guard case let .update(messageDTO, _) = $0 else { return nil }
+                return messageDTO
             }
         )
     }
@@ -486,7 +586,7 @@ private class MessageListObserver {
                 deletedMessagesVisibility: .alwaysVisible,
                 shouldShowShadowedMessages: false
             ),
-            itemCreator: { $0.id }
+            itemCreator: { $0 }
         )
 
         databaseObserver.onChange = { [weak self] in

@@ -35,16 +35,34 @@ struct ChannelReadUpdaterMiddleware: EventMiddleware {
             )
 
         case let event as MessageReadEventDTO:
-            resetChannelRead(for: event.cid, userId: event.user.id, lastReadAt: event.createdAt, session: session)
+            resetChannelRead(
+                for: event.cid,
+                userId: event.user.id,
+                lastReadAt: event.createdAt,
+                session: session
+            )
 
         case let event as NotificationMarkReadEventDTO:
-            resetChannelRead(for: event.cid, userId: event.user.id, lastReadAt: event.createdAt, session: session)
+            resetChannelRead(
+                for: event.cid,
+                userId: event.user.id,
+                lastReadAt: event.createdAt,
+                session: session
+            )
+            updateLastReadMessage(
+                for: event.cid,
+                userId: event.user.id,
+                lastReadMessageId: event.lastReadMessageId,
+                lastReadAt: event.createdAt,
+                session: session
+            )
 
         case let event as NotificationMarkUnreadEventDTO:
             markChannelAsUnread(
                 for: event.cid,
                 userId: event.user.id,
                 from: event.firstUnreadMessageId,
+                lastReadMessageId: event.lastReadMessageId,
                 lastReadAt: event.lastReadAt,
                 unreadMessages: event.unreadMessagesCount,
                 session: session
@@ -72,15 +90,34 @@ struct ChannelReadUpdaterMiddleware: EventMiddleware {
         session.markChannelAsRead(cid: cid, userId: userId, at: lastReadAt)
     }
 
+    private func updateLastReadMessage(
+        for cid: ChannelId,
+        userId: UserId,
+        lastReadMessageId: MessageId?,
+        lastReadAt: Date,
+        session: DatabaseSession
+    ) {
+        guard let read = session.loadChannelRead(cid: cid, userId: userId) else { return }
+        read.lastReadMessageId = lastReadMessageId
+    }
+
     private func markChannelAsUnread(
         for cid: ChannelId,
         userId: UserId,
         from messageId: MessageId,
+        lastReadMessageId: MessageId?,
         lastReadAt: Date,
         unreadMessages: Int,
         session: DatabaseSession
     ) {
-        session.markChannelAsUnread(for: cid, userId: userId, from: messageId, lastReadAt: lastReadAt, unreadMessagesCount: unreadMessages)
+        session.markChannelAsUnread(
+            for: cid,
+            userId: userId,
+            from: messageId,
+            lastReadMessageId: lastReadMessageId,
+            lastReadAt: lastReadAt,
+            unreadMessagesCount: unreadMessages
+        )
     }
 
     private func incrementUnreadCountIfNeeded(
@@ -98,7 +135,7 @@ struct ChannelReadUpdaterMiddleware: EventMiddleware {
             return log.debug("Not incrementing count for \(message.id) as this message has already been processed")
         }
 
-        guard let channelRead = session.loadChannelRead(cid: cid, userId: currentUser.user.id) else {
+        guard let channelRead = session.loadOrCreateChannelRead(cid: cid, userId: currentUser.user.id) else {
             return log.error("Channel read is missing", subsystems: .webSocket)
         }
 
@@ -129,7 +166,7 @@ struct ChannelReadUpdaterMiddleware: EventMiddleware {
             return log.error("Current user is missing", subsystems: .webSocket)
         }
 
-        guard let channelRead = session.loadChannelRead(cid: event.cid, userId: currentUser.user.id) else {
+        guard let channelRead = session.loadOrCreateChannelRead(cid: event.cid, userId: currentUser.user.id) else {
             return log.error("Channel read is missing", subsystems: .webSocket)
         }
 

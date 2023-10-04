@@ -44,6 +44,21 @@ extension Endpoint {
         )
     }
 
+    static func partialChannelUpdate(updates: ChannelEditDetailPayload, unsetProperties: [String]) -> Endpoint<EmptyResponse> {
+        let body: [String: AnyEncodable] = [
+            "set": AnyEncodable(updates),
+            "unset": AnyEncodable(unsetProperties)
+        ]
+
+        return .init(
+            path: .channelUpdate(updates.apiPath),
+            method: .patch,
+            queryItems: nil,
+            requiresConnectionId: false,
+            body: body
+        )
+    }
+
     static func muteChannel(cid: ChannelId, mute: Bool) -> Endpoint<EmptyResponse> {
         .init(
             path: .muteChannel(mute),
@@ -119,11 +134,19 @@ extension Endpoint {
         )
     }
 
-    static func addMembers(cid: ChannelId, userIds: Set<UserId>, hideHistory: Bool) -> Endpoint<EmptyResponse> {
-        let body: [String: AnyEncodable] = [
+    static func addMembers(
+        cid: ChannelId,
+        userIds: Set<UserId>,
+        hideHistory: Bool,
+        messagePayload: MessageRequestBody? = nil
+    ) -> Endpoint<EmptyResponse> {
+        var body: [String: AnyEncodable] = [
             "add_members": AnyEncodable(userIds),
             "hide_history": AnyEncodable(hideHistory)
         ]
+        if let messagePayload = messagePayload {
+            body["message"] = AnyEncodable(messagePayload)
+        }
         return .init(
             path: .channelUpdate(cid.apiPath),
             method: .post,
@@ -133,13 +156,23 @@ extension Endpoint {
         )
     }
 
-    static func removeMembers(cid: ChannelId, userIds: Set<UserId>) -> Endpoint<EmptyResponse> {
-        .init(
+    static func removeMembers(
+        cid: ChannelId,
+        userIds: Set<UserId>,
+        messagePayload: MessageRequestBody? = nil
+    ) -> Endpoint<EmptyResponse> {
+        var body: [String: AnyEncodable] = [
+            "remove_members": AnyEncodable(userIds)
+        ]
+        if let messagePayload = messagePayload {
+            body["message"] = AnyEncodable(messagePayload)
+        }
+        return .init(
             path: .channelUpdate(cid.apiPath),
             method: .post,
             queryItems: nil,
             requiresConnectionId: false,
-            body: ["remove_members": userIds]
+            body: body
         )
     }
 

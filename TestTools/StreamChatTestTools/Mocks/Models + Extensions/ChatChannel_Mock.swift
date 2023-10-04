@@ -48,11 +48,13 @@ public extension ChatChannelRead {
     /// Creates a new `ChatChannelRead` object from the provided data.
     static func mock(
         lastReadAt: Date,
+        lastReadMessageId: MessageId?,
         unreadMessagesCount: Int,
         user: ChatUser
     ) -> Self {
         .init(
             lastReadAt: lastReadAt,
+            lastReadMessageId: lastReadMessageId,
             unreadMessagesCount: unreadMessagesCount,
             user: user
         )
@@ -72,7 +74,7 @@ public extension ChatChannel {
         isHidden: Bool = false,
         createdBy: ChatUser? = nil,
         config: ChannelConfig = .mock(),
-        ownCapabilities: Set<ChannelCapability> = [],
+        ownCapabilities: Set<ChannelCapability> = [.sendMessage, .uploadFile],
         isFrozen: Bool = false,
         lastActiveMembers: [ChatChannelMember] = [],
         membership: ChatChannelMember? = nil,

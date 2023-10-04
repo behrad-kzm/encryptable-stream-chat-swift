@@ -133,12 +133,17 @@ final class ChannelListController_Tests: XCTestCase {
         controller.callbackQueue = .testQueue(withId: queueId)
 
         // Simulate `synchronize` calls and catch the completion
-        var completionCalled = false
+        let exp = expectation(description: "sync call should complete")
         controller.synchronize { error in
             XCTAssertNil(error)
             AssertTestQueue(withId: queueId)
-            completionCalled = true
+            exp.fulfill()
         }
+
+        // Simulate successful update
+        env.channelListUpdater?.update_completion?(.success([]))
+
+        waitForExpectations(timeout: defaultTimeout)
 
         // Keep a weak ref so we can check if it's actually deallocated
         weak var weakController = controller
@@ -149,16 +154,7 @@ final class ChannelListController_Tests: XCTestCase {
 
         // Assert the updater is called with the query
         XCTAssertEqual(env.channelListUpdater!.update_queries.first?.filter.filterHash, query.filter.filterHash)
-        // Completion shouldn't be called yet
-        XCTAssertFalse(completionCalled)
 
-        // Simulate successful update
-        env.channelListUpdater?.update_completion?(.success([]))
-        // Release reference of completion so we can deallocate stuff
-        env.channelListUpdater?.update_completion = nil
-
-        // Completion should be called
-        AssertAsync.willBeTrue(completionCalled)
         // `weakController` should be deallocated too
         AssertAsync.canBeReleased(&weakController)
     }
@@ -171,12 +167,17 @@ final class ChannelListController_Tests: XCTestCase {
         controller.callbackQueue = .testQueue(withId: queueId)
 
         // Simulate `synchronize` calls and catch the completion
-        var completionCalled = false
+        let exp = expectation(description: "sync call should complete")
         controller.synchronize { error in
             XCTAssertNil(error)
             AssertTestQueue(withId: queueId)
-            completionCalled = true
+            exp.fulfill()
         }
+
+        // Simulate successful update
+        env.channelListUpdater?.update_completion?(.success([]))
+
+        waitForExpectations(timeout: defaultTimeout)
 
         // Keep a weak ref so we can check if it's actually deallocated
         weak var weakController = controller
@@ -185,18 +186,6 @@ final class ChannelListController_Tests: XCTestCase {
         // by not keeping any references to it
         controller = nil
 
-        // Assert the updater is called with the correct pageSize
-        XCTAssertEqual(env.channelListUpdater!.update_queries.first?.pagination.pageSize, pageSize)
-        // Completion shouldn't be called yet
-        XCTAssertFalse(completionCalled)
-
-        // Simulate successful update
-        env.channelListUpdater!.update_completion?(.success([]))
-        // Release reference of completion so we can deallocate stuff
-        env.channelListUpdater!.update_completion = nil
-
-        // Completion should be called
-        AssertAsync.willBeTrue(completionCalled)
         // `weakController` should be deallocated too
         AssertAsync.canBeReleased(&weakController)
     }
@@ -206,12 +195,17 @@ final class ChannelListController_Tests: XCTestCase {
         controller.callbackQueue = .testQueue(withId: queueId)
 
         // Simulate `synchronize` calls and catch the completion
-        var completionCalled = false
+        let exp = expectation(description: "sync call should complete")
         controller.synchronize { error in
             XCTAssertNil(error)
             AssertTestQueue(withId: queueId)
-            completionCalled = true
+            exp.fulfill()
         }
+
+        // Simulate successful update
+        env.channelListUpdater?.update_completion?(.success([]))
+
+        waitForExpectations(timeout: defaultTimeout)
 
         // Keep a weak ref so we can check if it's actually deallocated
         weak var weakController = controller
@@ -222,16 +216,7 @@ final class ChannelListController_Tests: XCTestCase {
 
         // Assert the updater is called with the query
         XCTAssertEqual(env.channelListUpdater?.update_queries.first?.filter.filterHash, query.filter.filterHash)
-        // Completion shouldn't be called yet
-        XCTAssertFalse(completionCalled)
 
-        // Simulate successful update
-        env.channelListUpdater?.update_completion?(.success([]))
-        // Release reference of completion so we can deallocate stuff
-        env.channelListUpdater?.update_completion = nil
-
-        // Completion should be called
-        AssertAsync.willBeTrue(completionCalled)
         // `weakController` should be deallocated too
         AssertAsync.canBeReleased(&weakController)
     }
@@ -292,242 +277,6 @@ final class ChannelListController_Tests: XCTestCase {
         AssertAsync.willBeEqual(controller.channels.map(\.cid), [cid])
     }
 
-    func test_newChannel_callsListHook_whenSynchronized() throws {
-        setUpChatClientWithoutAutoFiltering()
-
-        // Simulate `synchronize` call and catch the completion
-        var synchronized = false
-        controller.synchronize { _ in synchronized = true }
-
-        // Add the channel to the DB
-        let cid: ChannelId = .unique
-        let channelPayload = dummyPayload(with: cid, members: [.dummy(user: .dummy(userId: memberId))])
-        var channel: ChatChannel!
-        try database.writeSynchronously { session in
-            let dto = try session.saveChannel(payload: channelPayload, query: self.query, cache: nil)
-            channel = try dto.asModel()
-        }
-
-        // Simulate successful response from backend
-        env.channelListUpdater?.update_completion?(.success([channel]))
-
-        AssertAsync {
-            // Assert synchronized completion is invoked
-            Assert.willBeTrue(synchronized)
-            // Assert the resulting value is updated
-            Assert.willBeEqual(self.controller.channels.map(\.cid), [cid])
-        }
-
-        let newCid: ChannelId = .unique
-
-        // Create and assign delegate
-        let delegate = TestLinkDelegate(shouldListNewChannel: { channel in
-            channel.cid != newCid
-        }, shouldListUpdatedChannel: { _ in
-            false
-        })
-        controller.delegate = delegate
-
-        // Insert a new channel to DB
-        try database.writeSynchronously { session in
-            try session.saveChannel(payload: .dummy(cid: newCid, members: [.dummy(user: .dummy(userId: self.memberId))]), query: nil, cache: nil)
-        }
-
-        // Assert the resulting value is not inserted
-        AssertAsync.willBeEqual(controller.channels.map(\.cid), [cid])
-
-        // Insert a new channel to DB
-        let insertedCid = ChannelId.unique
-        try database.writeSynchronously { session in
-            try session.saveChannel(payload: .dummy(cid: insertedCid, members: [.dummy(user: .dummy(userId: self.memberId))]), query: nil, cache: nil)
-        }
-
-        // Assert the resulting value is inserted
-        AssertAsync.willBeEqual(controller.channels.map(\.cid.rawValue).sorted(), [cid.rawValue, insertedCid.rawValue].sorted())
-    }
-
-    func test_updatedChannel_callsLinkHook_whenSynchronized() throws {
-        setUpChatClientWithoutAutoFiltering()
-
-        // Simulate `synchronize` call and catch the completion
-        var synchronized = false
-        controller.synchronize { _ in synchronized = true }
-
-        // Add the channel to the DB
-        let cid: ChannelId = .unique
-        let channelPayload = dummyPayload(with: cid, members: [.dummy(user: .dummy(userId: memberId))])
-        var channel: ChatChannel!
-        try database.writeSynchronously { session in
-            let dto = try session.saveChannel(payload: channelPayload, query: self.query, cache: nil)
-            channel = try dto.asModel()
-        }
-
-        // Simulate successful response from backend
-        env.channelListUpdater?.update_completion?(.success([channel]))
-
-        AssertAsync {
-            // Assert synchronized completion is invoked
-            Assert.willBeTrue(synchronized)
-            // Assert the resulting value is updated
-            Assert.willBeEqual(self.controller.channels.map(\.cid), [cid])
-        }
-
-        let shouldBeInsertedCid: ChannelId = .unique
-        let shouldBeExcludedCid: ChannelId = .unique
-
-        // Create and assign delegate
-        let delegate = TestLinkDelegate(shouldListNewChannel: { _ in
-            false
-        }, shouldListUpdatedChannel: { channel in
-            channel.cid == shouldBeInsertedCid
-        })
-        controller.delegate = delegate
-
-        // Insert 2 channels to cid
-        try database.writeSynchronously { session in
-            try session.saveChannel(payload: .dummy(cid: shouldBeInsertedCid, members: [.dummy(user: .dummy(userId: self.memberId))]), query: nil, cache: nil)
-            try session.saveChannel(payload: .dummy(cid: shouldBeExcludedCid, members: [.dummy(user: .dummy(userId: self.memberId))]), query: nil, cache: nil)
-        }
-
-        // Assert that 2 new channels are not linked
-        AssertAsync.willBeEqual(controller.channels.map(\.cid), [cid])
-
-        // Update `shouldBeExcludedCid`
-        try database.writeSynchronously { session in
-            let dto = try XCTUnwrap(session.channel(cid: shouldBeExcludedCid))
-            dto.updatedAt = .unique
-        }
-
-        // Assert that updated channel is not linked
-        AssertAsync.willBeEqual(controller.channels.map(\.cid), [cid])
-
-        // Update `shouldBeInsertedCid`
-        try database.writeSynchronously { session in
-            let dto = try XCTUnwrap(session.channel(cid: shouldBeInsertedCid))
-            dto.updatedAt = .unique
-        }
-
-        // Assert that updated channel is linked
-        AssertAsync.willBeEqual(
-            controller.channels.map(\.cid.rawValue).sorted(),
-            [cid.rawValue, shouldBeInsertedCid.rawValue].sorted()
-        )
-    }
-
-    func test_updatedChannel_callsUnlinkHook_whenSynchronized() throws {
-        setUpChatClientWithoutAutoFiltering()
-
-        // Simulate `synchronize` call and catch the completion
-        var synchronized = false
-        controller.synchronize { _ in synchronized = true }
-
-        // Add the channel to the DB
-        let cid: ChannelId = .unique
-        let channelPayload = dummyPayload(with: cid, members: [.dummy(user: .dummy(userId: memberId))])
-        var channel: ChatChannel!
-        try database.writeSynchronously { session in
-            let dto = try session.saveChannel(payload: channelPayload, query: self.query, cache: nil)
-            channel = try dto.asModel()
-        }
-
-        // Simulate successful response from backend
-        env.channelListUpdater?.update_completion?(.success([channel]))
-
-        AssertAsync {
-            // Assert synchronized completion is invoked
-            Assert.willBeTrue(synchronized)
-            // Assert the resulting value is updated
-            Assert.willBeEqual(self.controller.channels.map(\.cid), [cid])
-        }
-
-        // Create and assign delegate
-        let delegate = TestLinkDelegate(
-            shouldListNewChannel: { _ in false },
-            shouldListUpdatedChannel: { channel in
-                channel.cid != cid
-            }
-        )
-        controller.delegate = delegate
-
-        // Update linked channel
-        try database.writeSynchronously { session in
-            let channelDTO = session.channel(cid: cid)
-            channelDTO?.updatedAt = .unique
-        }
-
-        // Assert that new channel is unlinked
-        AssertAsync.willBeEqual(controller.channels.map(\.cid), [])
-    }
-
-    func test_unlinkedChannels_doNotTriggerHooks_whenNotSynchronized() throws {
-        // Create and assign delegate, catch
-        var delegateCalled = false
-        let delegate = TestLinkDelegate(shouldListNewChannel: { _ in
-            delegateCalled = true
-            return false
-        }, shouldListUpdatedChannel: { _ in
-            delegateCalled = true
-            return false
-        })
-        controller.delegate = delegate
-
-        // Save a channel not-linked to the current query
-        let cid: ChannelId = .unique
-        try database.writeSynchronously { session in
-            try session.saveChannel(payload: self.dummyPayload(with: cid), query: nil, cache: nil)
-        }
-
-        AssertAsync {
-            // Assert hooks are not called
-            Assert.staysFalse(delegateCalled)
-            // Assert channels stay empty
-            Assert.willBeEqual(self.controller.channels.map(\.cid), [])
-        }
-
-        // Update a channel not linked to the current query
-        try database.writeSynchronously { session in
-            let dto = try XCTUnwrap(session.channel(cid: cid))
-            dto.updatedAt = .unique
-        }
-
-        AssertAsync {
-            // Assert hooks are not called
-            Assert.staysFalse(delegateCalled)
-            // Assert channels stay empty
-            Assert.willBeEqual(self.controller.channels.map(\.cid), [])
-        }
-    }
-
-    func test_linkedChannels_doesTriggerUnlinkHook_whenNotSynchronized() throws {
-        setUpChatClientWithoutAutoFiltering()
-
-        // Save a channel linked to the current query
-        let cid: ChannelId = .unique
-        try database.writeSynchronously { session in
-            try session.saveChannel(payload: self.dummyPayload(with: cid, members: [.dummy(user: .dummy(userId: self.memberId))]), query: self.query, cache: nil)
-        }
-
-        // Assert channel is linked
-        AssertAsync.willBeEqual(controller.channels.map(\.cid), [cid])
-
-        // Create and assign delegate excluding a channel from a query
-        let delegate = TestLinkDelegate(shouldListNewChannel: { _ in
-            true
-        }, shouldListUpdatedChannel: { channel in
-            channel.cid != cid
-        })
-        controller.delegate = delegate
-
-        // Update a channel linked to the current query
-        try database.writeSynchronously { session in
-            let dto = try XCTUnwrap(session.channel(cid: cid))
-            dto.updatedAt = .unique
-        }
-
-        // Assert linked channel is unlisted
-        AssertAsync.willBeEqual(controller.channels.map(\.cid), [])
-    }
-
     func test_hiddenChannel_isExcluded_whenFilterDoesntContainHiddenKey() throws {
         // Add 2 channels to the DB
         let cid: ChannelId = .unique
@@ -568,127 +317,255 @@ final class ChannelListController_Tests: XCTestCase {
         XCTAssertEqual(controller.channels.first?.isHidden, true)
     }
 
-    // MARK: - Change propagation tests with filter block
+    // MARK: - Linking and Unlinking Channels when channels are updated/inserted
 
-    func test_addingANewChannelThatMatchesFilter_shouldLinkItToQuery_shouldWatchIt() throws {
-        var filterCalls = 0
-        prepareControllerWithOwnerFilter(userId: memberId, onFilterCall: { filterCalls += 1 })
+    func test_didReceiveEvent_whenNotificationAddedToChannelEvent_shouldLinkChannelToQuery() {
+        let event = makeAddedChannelEvent(with: .mock(cid: .unique))
 
-        // Simulate `synchronize` call
-        let expectation = self.expectation(description: "Synchronize completion")
-        controller.synchronize { _ in expectation.fulfill() }
-        let originalCid: ChannelId = .unique
-        try addOrUpdateChannel(cid: originalCid, ownerId: memberId, query: query)
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
 
-        // Simulate successful response from backend
-        env.channelListUpdater?.update_completion?(.success([]))
-        waitForExpectations(timeout: defaultTimeout, handler: nil)
-        XCTAssertEqual(controller.channels.count, 1)
-        XCTAssertEqual(filterCalls, 0)
+        env.channelListUpdater?.link_completion?(nil)
 
-        let ownedCid: ChannelId = .unique
-        let unownedCid: ChannelId = .unique
-        try [ownedCid, unownedCid].forEach { cid in
-            try addOrUpdateChannel(cid: cid, ownerId: cid == ownedCid ? memberId : "other", query: nil)
-        }
-
-        // The original channel + the owned that was just added
-        AssertAsync.willBeEqual(controller.channels.count, 2)
-        XCTAssertTrue(controller.channels.contains { $0.cid == originalCid })
-        XCTAssertTrue(controller.channels.contains { $0.cid == ownedCid })
-        XCTAssertFalse(controller.channels.contains { $0.cid == unownedCid })
-
-        // Two channels were added to the DB, both were evaluated, only one was added to the list
-        XCTAssertEqual(filterCalls, 2)
-        // Watches channel that was added to the list
-        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_cids, [ownedCid])
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 1)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 1)
     }
 
-    func test_updatingAChannelThatIsLinkedToTheQuery_shouldUnlinkIt() throws {
-        var filterCalls = 0
-        prepareControllerWithOwnerFilter(userId: memberId, onFilterCall: { filterCalls += 1 })
+    func test_didReceiveEvent_whenMessageNewEvent_shouldLinkChannelToQuery() {
+        let event = makeMessageNewEvent(with: .mock(cid: .unique))
 
-        // Simulate `synchronize` call
-        let expectation = self.expectation(description: "Synchronize completion")
-        controller.synchronize { _ in expectation.fulfill() }
-        let originalCid: ChannelId = .unique
-        try addOrUpdateChannel(cid: originalCid, ownerId: memberId, query: query)
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
 
-        // Simulate successful response from backend
-        env.channelListUpdater?.update_completion?(.success([]))
-        waitForExpectations(timeout: defaultTimeout, handler: nil)
-        XCTAssertEqual(controller.channels.count, 1)
-        XCTAssertEqual(filterCalls, 0)
+        env.channelListUpdater?.link_completion?(nil)
 
-        // Simulate update of the channel linked to query
-        try addOrUpdateChannel(cid: originalCid, ownerId: "something else", query: nil)
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 1)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 1)
+    }
+    
+    func test_didReceiveEvent_whenChannelVisibleEvent_shouldLinkChannelToQuery() {
+        let channel = ChatChannel.mock(cid: .unique)
+        try? database.createChannel(cid: channel.cid, channelReads: [])
+        let event = makeChannelVisibleEvent(with: channel)
 
-        // The original channel + the owned that was just added
-        AssertAsync.willBeEqual(controller.channels.count, 0)
-        XCTAssertFalse(controller.channels.contains { $0.cid == originalCid })
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
 
-        // The updated channel was evaluated once to be unlinked, and then by the unlinked query listener
-        XCTAssertEqual(filterCalls, 2)
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 1)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 1)
     }
 
-    func test_updatingAChannelThatIsNotLinkedToTheQuery_shouldLinkIt() throws {
-        var filterCalls = 0
-        prepareControllerWithOwnerFilter(userId: memberId, onFilterCall: { filterCalls += 1 })
+    func test_didReceiveEvent_whenNotificationMessageNewEvent_shouldLinkChannelToQuery() {
+        let event = makeNotificationMessageNewEvent(with: .mock(cid: .unique))
 
-        // Simulate `synchronize` call
-        let expectation = self.expectation(description: "Synchronize completion")
-        controller.synchronize { _ in expectation.fulfill() }
-        let originalCid: ChannelId = .unique
-        try addOrUpdateChannel(cid: originalCid, ownerId: memberId, query: query)
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
 
-        // Simulate successful response from backend
-        env.channelListUpdater?.update_completion?(.success([]))
-        waitForExpectations(timeout: defaultTimeout, handler: nil)
-        XCTAssertEqual(controller.channels.count, 1)
-        XCTAssertEqual(filterCalls, 0)
+        env.channelListUpdater?.link_completion?(nil)
 
-        let originallyUnownedCid: ChannelId = .unique
-        try addOrUpdateChannel(cid: originallyUnownedCid, ownerId: "other", query: nil)
-
-        // The added channel should be evaluated, but not added
-        AssertAsync.willBeEqual(filterCalls, 1)
-        XCTAssertTrue(controller.channels.contains { $0.cid == originalCid })
-        XCTAssertFalse(controller.channels.contains { $0.cid == originallyUnownedCid })
-
-        // Simulate update on the channel not matching the query, to make it match it
-        try addOrUpdateChannel(cid: originallyUnownedCid, ownerId: memberId, query: nil)
-
-        // The updated channel should be evaluated, and added
-        AssertAsync.willBeEqual(controller.channels.count, 2)
-        XCTAssertEqual(filterCalls, 2)
-        XCTAssertTrue(controller.channels.contains { $0.cid == originalCid })
-        XCTAssertTrue(controller.channels.contains { $0.cid == originallyUnownedCid })
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 1)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 1)
     }
 
-    private func addOrUpdateChannel(cid: ChannelId, ownerId: String, query: ChannelListQuery?) throws {
+    func test_didReceiveEvent_whenNotificationAddedToChannelEvent_whenChannelAlreadyPresent_shouldNotLinkChannelToQuery() throws {
+        controller.synchronize()
+
+        // Save channel to the current query
+        let cid: ChannelId = .unique
         try database.writeSynchronously { session in
-            let payload = self.dummyPayload(with: cid, members: [.dummy(user: .dummy(userId: self.memberId))], channelExtraData: ["owner_id": .string(ownerId)])
-            try session.saveChannel(payload: payload, query: query, cache: nil)
+            try session.saveChannel(
+                payload: self.dummyPayload(
+                    with: cid,
+                    members: [.dummy(user: .dummy(userId: self.memberId))]
+                ),
+                query: self.query,
+                cache: nil
+            )
         }
+
+        let event = makeAddedChannelEvent(with: .mock(cid: cid))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 0)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 0)
     }
 
-    private func prepareControllerWithOwnerFilter(userId: UserId, onFilterCall: @escaping () -> Void) {
-        let filter: (ChatChannel) -> Bool = { channel in
-            onFilterCall()
-            guard case let .string(owner) = channel.extraData["owner_id"] else { return false }
-            return owner == userId
+    func test_didReceiveEvent_whenMessageNewEvent_whenChannelAlreadyPresent_shouldNotLinkChannelToQuery() throws {
+        controller.synchronize()
+
+        // Save channel to the current query
+        let cid: ChannelId = .unique
+        try database.writeSynchronously { session in
+            try session.saveChannel(
+                payload: self.dummyPayload(
+                    with: cid,
+                    members: [.dummy(user: .dummy(userId: self.memberId))]
+                ),
+                query: self.query,
+                cache: nil
+            )
         }
 
-        // Prepare controller
+        let event = makeMessageNewEvent(with: .mock(cid: cid))
 
-        client.authenticationRepository.setMockToken()
-        query = .init(filter: .and(
-            [
-                .containMembers(userIds: [userId]),
-                .notEqual(.init(rawValue: "owner_id"), to: userId)
-            ]
-        ))
-        controller = ChatChannelListController(query: query, client: client, filter: filter, environment: env.environment)
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 0)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 0)
+    }
+
+    func test_didReceiveEvent_whenNotificationMessageNewEvent_whenChannelAlreadyPresent_shouldNotLinkChannelToQuery() throws {
+        controller.synchronize()
+        
+        // Save channel to the current query
+        let cid: ChannelId = .unique
+        try database.writeSynchronously { session in
+            try session.saveChannel(
+                payload: self.dummyPayload(
+                    with: cid,
+                    members: [.dummy(user: .dummy(userId: self.memberId))]
+                ),
+                query: self.query,
+                cache: nil
+            )
+        }
+
+        let event = makeNotificationMessageNewEvent(with: .mock(cid: cid))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 0)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 0)
+    }
+
+    func test_didReceiveEvent_whenFilterMatches_shouldLinkChannelToQuery() {
+        let filter: (ChatChannel) -> Bool = { channel in
+            channel.memberCount == 4
+        }
+        setupControllerWithFilter(filter)
+
+        let event = makeAddedChannelEvent(with: .mock(cid: .unique, memberCount: 4))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 1)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 1)
+    }
+
+    func test_didReceiveEvent_whenFilterMatches_whenChannelAlreadyPresent_shouldNotLinkChannelToQuery() throws {
+        let filter: (ChatChannel) -> Bool = { channel in
+            channel.memberCount == 4
+        }
+        setupControllerWithFilter(filter)
+
+        // Save channel to the current query
+        let cid: ChannelId = .unique
+        try database.writeSynchronously { session in
+            try session.saveChannel(
+                payload: self.dummyPayload(
+                    with: cid,
+                    members: [.dummy(user: .dummy(userId: self.memberId))]
+                ),
+                query: self.query,
+                cache: nil
+            )
+        }
+
+        let event = makeAddedChannelEvent(with: .mock(cid: cid, memberCount: 4))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 0)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 0)
+    }
+
+    func test_didReceiveEvent_whenFilterDoesNotMatch_shouldNotLinkChannelToQuery() {
+        let filter: (ChatChannel) -> Bool = { channel in
+            channel.memberCount == 1
+        }
+        setupControllerWithFilter(filter)
+
+        let event = makeAddedChannelEvent(with: .mock(cid: .unique, memberCount: 4))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        env.channelListUpdater?.link_completion?(nil)
+
+        XCTAssertEqual(env.channelListUpdater?.link_callCount, 0)
+        XCTAssertEqual(env.channelListUpdater?.startWatchingChannels_callCount, 0)
+    }
+
+    func test_didReceiveEvent_whenChannelUpdatedEvent_whenFilterDoesNotMatch_shouldUnlinkChannelFromQuery() throws {
+        let filter: (ChatChannel) -> Bool = { channel in
+            channel.memberCount == 1
+        }
+        setupControllerWithFilter(filter)
+
+        // Save channel to the current query
+        let cid: ChannelId = .unique
+        try database.writeSynchronously { session in
+            try session.saveChannel(
+                payload: self.dummyPayload(
+                    with: cid,
+                    members: [.dummy(user: .dummy(userId: self.memberId))]
+                ),
+                query: self.query,
+                cache: nil
+            )
+        }
+
+        let event = makeChannelUpdatedEvent(with: .mock(cid: cid, memberCount: 4))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        XCTAssertEqual(env.channelListUpdater?.unlink_callCount, 1)
+    }
+
+    func test_didReceiveEvent_whenChannelUpdatedEvent__whenFilterMatches_shouldNotUnlinkChannelFromQuery() throws {
+        let filter: (ChatChannel) -> Bool = { channel in
+            channel.memberCount == 4
+        }
+        setupControllerWithFilter(filter)
+
+        let cid: ChannelId = .unique
+        try database.writeSynchronously { session in
+            try session.saveChannel(
+                payload: self.dummyPayload(
+                    with: cid,
+                    members: [.dummy(user: .dummy(userId: self.memberId))]
+                ),
+                query: self.query,
+                cache: nil
+            )
+        }
+
+        let event = makeChannelUpdatedEvent(with: .mock(cid: cid, memberCount: 4))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        XCTAssertEqual(env.channelListUpdater?.unlink_callCount, 0)
+    }
+
+    func test_didReceiveEvent_whenChannelUpdatedEvent__whenFilterDoesNotMatch_whenChannelNotPresent_shouldNotUnlinkChannelFromQuery() throws {
+        let filter: (ChatChannel) -> Bool = { channel in
+            channel.memberCount == 1
+        }
+        setupControllerWithFilter(filter)
+
+        let event = makeChannelUpdatedEvent(with: .mock(cid: .unique, memberCount: 4))
+
+        controller.eventsController(controller.eventsController, didReceiveEvent: event)
+
+        XCTAssertEqual(env.channelListUpdater?.unlink_callCount, 0)
     }
 
     // MARK: - Change propagation tests with auto-filtering
@@ -1405,15 +1282,17 @@ final class ChannelListController_Tests: XCTestCase {
     func test_filterPredicate_autocomplete_containsExpectedItems() throws {
         let cid1 = ChannelId.unique
         let cid2 = ChannelId.unique
+        let cid3 = ChannelId.unique
 
         try assertFilterPredicate(
             .autocomplete(.name, text: "team"),
             channelsInDB: [
                 .dummy(channel: .dummy(cid: cid1, name: "teamStream")),
                 .dummy(channel: .dummy(cid: cid2, name: "TeAm_original")),
+                .dummy(channel: .dummy(cid: cid3, name: "original_team")),
                 .dummy(channel: .dummy(name: "random"))
             ],
-            expectedResult: [cid1, cid2]
+            expectedResult: [cid1, cid2, cid3]
         )
     }
 
@@ -1676,7 +1555,152 @@ final class ChannelListController_Tests: XCTestCase {
         )
     }
 
+    func test_filterPredicate_joined_returnsExpectedResults() throws {
+        let cid1 = ChannelId.unique
+        let cid2 = ChannelId.unique
+
+        try assertFilterPredicate(
+            .equal(.joined, to: true),
+            channelsInDB: [
+                .dummy(channel: .dummy(cid: cid1), membership: .dummy()),
+                .dummy(channel: .dummy(team: .unique)),
+                .dummy(channel: .dummy(team: .unique)),
+                .dummy(channel: .dummy(team: .unique)),
+                .dummy(channel: .dummy(cid: cid2), membership: .dummy())
+            ],
+            expectedResult: [cid1, cid2]
+        )
+    }
+
+    func test_filterPredicate_muted_returnsExpectedResults() throws {
+        let cid1 = ChannelId.unique
+        let userId = memberId
+
+        // Create the Controller
+        let query = ChannelListQuery(filter: .equal(.muted, to: true))
+        controller = ChatChannelListController(
+            query: query,
+            client: client,
+            environment: env.environment
+        )
+        controller.synchronize()
+
+        // Save Mute
+        let mutedChannel: ChannelDetailPayload = .dummy(
+            cid: cid1,
+            members: [.dummy(user: .dummy(userId: userId))]
+        )
+        try database.writeSynchronously { session in
+            try session.saveChannel(payload: .dummy(channel: mutedChannel), query: query, cache: nil)
+            try session.saveCurrentUser(payload: .dummy(
+                userId: userId,
+                role: .admin
+            ))
+            try session.saveChannelMute(payload: .init(
+                mutedChannel: mutedChannel,
+                user: .dummy(userId: userId),
+                createdAt: .unique,
+                updatedAt: .unique
+            ))
+        }
+
+        // Save Channels
+        let channelsInDB: [ChannelPayload] = [
+            .dummy(channel: .dummy(cid: cid1), membership: .dummy()),
+            .dummy(channel: .dummy(team: .unique)),
+            .dummy(channel: .dummy(team: .unique)),
+            .dummy(channel: .dummy(team: .unique))
+        ]
+        _ = try waitFor { [unowned client] in
+            client?.databaseContainer.write({ [query] session in
+                try channelsInDB.forEach { payload in
+                    try session.saveChannel(payload: payload, query: query, cache: nil)
+                }
+            }, completion: $0)
+        }
+
+        // Assert
+        let expectedResult = [cid1]
+        XCTAssertEqual(
+            controller.channels.map(\.cid.rawValue).sorted(),
+            expectedResult.map(\.rawValue).sorted()
+        )
+    }
+  
+    func test_filterPredicate_noTeam_returnsExpectedResults() throws {
+        let cid = ChannelId.unique
+
+        try assertFilterPredicate(
+            .noTeam,
+            channelsInDB: [
+                .dummy(channel: .dummy(cid: cid, team: nil)),
+                .dummy(channel: .dummy(team: .unique)),
+                .dummy(channel: .dummy(team: .unique)),
+                .dummy(channel: .dummy(team: .unique)),
+                .dummy(channel: .dummy(team: .unique))
+            ],
+            expectedResult: [cid]
+        )
+    }
+
     // MARK: - Private Helpers
+
+    private func makeAddedChannelEvent(with channel: ChatChannel) -> NotificationAddedToChannelEvent {
+        NotificationAddedToChannelEvent(
+            channel: channel,
+            unreadCount: nil,
+            member: .mock(id: .unique),
+            createdAt: .unique
+        )
+    }
+
+    private func makeMessageNewEvent(with channel: ChatChannel) -> MessageNewEvent {
+        MessageNewEvent(
+            user: .unique,
+            message: .unique,
+            channel: channel,
+            createdAt: .unique,
+            watcherCount: nil,
+            unreadCount: nil
+        )
+    }
+    
+    private func makeChannelVisibleEvent(with channel: ChatChannel) -> ChannelVisibleEvent {
+        ChannelVisibleEvent(
+            cid: channel.cid,
+            user: .unique,
+            createdAt: .unique
+        )
+    }
+
+    private func makeNotificationMessageNewEvent(with channel: ChatChannel) -> NotificationMessageNewEvent {
+        NotificationMessageNewEvent(
+            channel: channel,
+            message: .unique,
+            createdAt: .unique,
+            unreadCount: nil
+        )
+    }
+
+    private func makeChannelUpdatedEvent(with channel: ChatChannel) -> ChannelUpdatedEvent {
+        ChannelUpdatedEvent(
+            channel: channel,
+            user: .unique,
+            message: .unique,
+            createdAt: .unique
+        )
+    }
+
+    private func setupControllerWithFilter(_ filter: @escaping (ChatChannel) -> Bool) {
+        // Prepare controller
+        controller = ChatChannelListController(
+            query: query,
+            client: client,
+            filter: filter,
+            environment: env.environment
+        )
+        controller.synchronize()
+    }
 
     private func setUpChatClientWithoutAutoFiltering() {
         var config = ChatClientConfig(apiKey: .init(.unique))

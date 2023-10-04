@@ -99,10 +99,25 @@ class ChannelUpdater: Worker {
 
     /// Updates specific channel with new data.
     /// - Parameters:
-    ///   - channelPayload: New channel data..
+    ///   - channelPayload: New channel data.
     ///   - completion: Called when the API call is finished. Called with `Error` if the remote update fails.
     func updateChannel(channelPayload: ChannelEditDetailPayload, completion: ((Error?) -> Void)? = nil) {
         apiClient.request(endpoint: .updateChannel(channelPayload: channelPayload)) {
+            completion?($0.error)
+        }
+    }
+
+    /// Updates specific channel with provided data, and removes unneeded properties.
+    /// - Parameters:
+    ///   - updates: Updated channel data. Only non-nil data will be updated.
+    ///   - unsetProperties: Properties from the channel that are going to be cleared/unset.
+    ///   - completion: Called when the API call is finished. Called with `Error` if the remote update fails.
+    func partialChannelUpdate(
+        updates: ChannelEditDetailPayload,
+        unsetProperties: [String],
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        apiClient.request(endpoint: .partialChannelUpdate(updates: updates, unsetProperties: unsetProperties)) {
             completion?($0.error)
         }
     }
@@ -249,6 +264,7 @@ class ChannelUpdater: Worker {
     ///
     /// - Parameters:
     ///   - cid: The cid of the channel the message is create in.
+    ///   - messageId: The id for the sent message.
     ///   - text: Text of the message.
     ///   - pinning: Pins the new message. Nil if should not be pinned.
     ///   - isSilent: A flag indicating whether the message is a silent message. Silent messages are special messages that don't increase the unread messages count nor mark a channel as unread.
@@ -261,6 +277,7 @@ class ChannelUpdater: Worker {
     ///
     func createNewMessage(
         in cid: ChannelId,
+        messageId: MessageId?,
         text: String,
         pinning: MessagePinning? = nil,
         isSilent: Bool,
@@ -278,6 +295,7 @@ class ChannelUpdater: Worker {
         database.write({ (session) in
             let newMessageDTO = try session.createNewMessage(
                 in: cid,
+                messageId: messageId,
                 text: text,
                 pinning: pinning,
                 command: command,
@@ -307,23 +325,55 @@ class ChannelUpdater: Worker {
 
     /// Add users to the channel as members.
     /// - Parameters:
+    ///   - currentUserId: the id of the current user.
     ///   - cid: The Id of the channel where you want to add the users.
-    ///   - users: User Ids to add to the channel.
+    ///   - userIds: User ids to add to the channel.
+    ///   - message: Optional system message sent when adding a member.
     ///   - hideHistory: Hide the history of the channel to the added member.
     ///   - completion: Called when the API call is finished. Called with `Error` if the remote update fails.
-    func addMembers(cid: ChannelId, userIds: Set<UserId>, hideHistory: Bool, completion: ((Error?) -> Void)? = nil) {
-        apiClient.request(endpoint: .addMembers(cid: cid, userIds: userIds, hideHistory: hideHistory)) {
+    func addMembers(
+        currentUserId: UserId? = nil,
+        cid: ChannelId,
+        userIds: Set<UserId>,
+        message: String? = nil,
+        hideHistory: Bool,
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        let messagePayload = messagePayload(text: message, currentUserId: currentUserId)
+        apiClient.request(
+            endpoint: .addMembers(
+                cid: cid,
+                userIds: userIds,
+                hideHistory: hideHistory,
+                messagePayload: messagePayload
+            )
+        ) {
             completion?($0.error)
         }
     }
 
     /// Remove users to the channel as members.
     /// - Parameters:
+    ///   - currentUserId: the id of the current user.
     ///   - cid: The Id of the channel where you want to remove the users.
-    ///   - users: User Ids to remove from the channel.
+    ///   - userIds: User ids to remove from the channel.
+    ///   - message: Optional system message sent when removing a member.
     ///   - completion: Called when the API call is finished. Called with `Error` if the remote update fails.
-    func removeMembers(cid: ChannelId, userIds: Set<UserId>, completion: ((Error?) -> Void)? = nil) {
-        apiClient.request(endpoint: .removeMembers(cid: cid, userIds: userIds)) {
+    func removeMembers(
+        currentUserId: UserId? = nil,
+        cid: ChannelId,
+        userIds: Set<UserId>,
+        message: String? = nil,
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        let messagePayload = messagePayload(text: message, currentUserId: currentUserId)
+        apiClient.request(
+            endpoint: .removeMembers(
+                cid: cid,
+                userIds: userIds,
+                messagePayload: messagePayload
+            )
+        ) {
             completion?($0.error)
         }
     }
@@ -385,9 +435,22 @@ class ChannelUpdater: Worker {
     ///   - cid: The id of the channel to be marked as unread
     ///   - userId: The id of the current user
     ///   - messageId: The id of the first message id that will be marked as unread.
+    ///   - lastReadMessageId: The id of the last message that was read.
     ///   - completion: Called when the API call is finished. Called with `Error` if the remote update fails.
-    func markUnread(cid: ChannelId, userId: UserId, from messageId: MessageId, completion: ((Error?) -> Void)? = nil) {
-        channelRepository.markUnread(for: cid, userId: userId, from: messageId, completion: completion)
+    func markUnread(
+        cid: ChannelId,
+        userId: UserId,
+        from messageId: MessageId,
+        lastReadMessageId: MessageId?,
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        channelRepository.markUnread(
+            for: cid,
+            userId: userId,
+            from: messageId,
+            lastReadMessageId: lastReadMessageId,
+            completion: completion
+        )
     }
 
     ///
@@ -544,5 +607,39 @@ class ChannelUpdater: Worker {
 
     func createCall(in cid: ChannelId, callId: String, type: String, completion: @escaping (Result<CallWithToken, Error>) -> Void) {
         callRepository.createCall(in: cid, callId: callId, type: type, completion: completion)
+    }
+    
+    func deleteFile(in cid: ChannelId, url: String, completion: ((Error?) -> Void)? = nil) {
+        apiClient.request(endpoint: .deleteFile(cid: cid, url: url), completion: {
+            completion?($0.error)
+        })
+    }
+    
+    func deleteImage(in cid: ChannelId, url: String, completion: ((Error?) -> Void)? = nil) {
+        apiClient.request(endpoint: .deleteImage(cid: cid, url: url), completion: {
+            completion?($0.error)
+        })
+    }
+    
+    // MARK: - private
+    
+    private func messagePayload(text: String?, currentUserId: UserId?) -> MessageRequestBody? {
+        var messagePayload: MessageRequestBody?
+        if let text = text, let currentUserId = currentUserId {
+            let userRequestBody = UserRequestBody(
+                id: currentUserId,
+                name: nil,
+                imageURL: nil,
+                extraData: [:]
+            )
+            messagePayload = MessageRequestBody(
+                id: .newUniqueId,
+                user: userRequestBody,
+                text: text,
+                extraData: [:]
+            )
+            return messagePayload
+        }
+        return nil
     }
 }

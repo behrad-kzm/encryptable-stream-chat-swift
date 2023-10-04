@@ -9,6 +9,7 @@ import StreamChatTestHelpers
 public class ChatChannelListController_Mock: ChatChannelListController, Spy {
     public var recordedFunctions: [String] = []
     public var loadNextChannelsIsCalled = false
+    public var loadNextChannelsCallCount = 0
     public var resetChannelsQueryResult: Result<(synchedAndWatched: [ChatChannel], unwanted: Set<ChannelId>), Error>?
 
     /// Creates a new mock instance of `ChatChannelListController`.
@@ -16,18 +17,19 @@ public class ChatChannelListController_Mock: ChatChannelListController, Spy {
         .init(query: .init(filter: .equal(.memberCount, to: 0)), client: client ?? .mock())
     }
 
-    public private(set) var channels_mock: [ChatChannel]?
+    public var channels_mock: [ChatChannel]?
     override public var channels: LazyCachedMapCollection<ChatChannel> {
         channels_mock.map { $0.lazyCachedMap { $0 } } ?? super.channels
     }
 
-    public private(set) var state_mock: State?
+    public var state_mock: State?
     override public var state: DataController.State {
         get { state_mock ?? super.state }
         set { super.state = newValue }
     }
 
     override public func loadNextChannels(limit: Int?, completion: ((Error?) -> Void)?) {
+        loadNextChannelsCallCount += 1
         loadNextChannelsIsCalled = true
     }
 

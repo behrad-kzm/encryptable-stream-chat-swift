@@ -57,7 +57,23 @@ public extension Appearance {
         public var folder: UIImage = loadImageSafely(with: "folder")
         public var restart: UIImage = loadImageSafely(with: "restart")
         public var emptyChannelListMessageBubble: UIImage = loadImageSafely(with: "empty_channel_list_message_bubble")
+        public var emptySearch: UIImage = loadImageSafely(with: "empty_search")
         public var download: UIImage = loadSafely(systemName: "icloud.and.arrow.down", assetsFallback: "download")
+
+        // MARK: - Recording
+
+        public var mic: UIImage = loadSafely(systemName: "mic", assetsFallback: "mic")
+        public var lock: UIImage = loadSafely(systemName: "lock", assetsFallback: "lock")
+        public var chevronLeft: UIImage = loadSafely(systemName: "chevron.left", assetsFallback: "chevron.left")
+        public var chevronUp: UIImage = loadSafely(systemName: "chevron.up", assetsFallback: "chevron.up")
+        public var trash: UIImage = loadSafely(systemName: "trash", assetsFallback: "trash")
+        public var stop: UIImage = loadSafely(systemName: "stop.circle", assetsFallback: "")
+        public var playFill: UIImage = loadSafely(systemName: "play.fill", assetsFallback: "play.fill")
+        public var pauseFill: UIImage = loadSafely(systemName: "pause.fill", assetsFallback: "pause.fill")
+        public var recordingPlay: UIImage = loadSafely(systemName: "play", assetsFallback: "play_big")
+        public var recordingPause: UIImage = loadSafely(systemName: "pause", assetsFallback: "pause.fill")
+        public var rateButtonPillBackground: UIImage = loadImageSafely(with: "pill")
+        public var sliderThumb: UIImage = loadImageSafely(with: "sliderThumb")
 
         // MARK: - Message Receipts
 
@@ -116,6 +132,7 @@ public extension Appearance {
         // MARK: - FileIcons
 
         public var file7z: UIImage = loadImageSafely(with: "7z")
+        public var fileAac: UIImage = loadImageSafely(with: "aac")
         public var fileCsv: UIImage = loadImageSafely(with: "csv")
         public var fileDoc: UIImage = loadImageSafely(with: "doc")
         public var fileDocx: UIImage = loadImageSafely(with: "docx")
@@ -141,6 +158,7 @@ public extension Appearance {
             get { _documentPreviews ??
                 [
                     "7z": file7z,
+                    "aac": fileAac,
                     "csv": fileCsv,
                     "doc": fileDoc,
                     "docx": fileDocx,
@@ -178,6 +196,7 @@ public extension Appearance {
 
         // MARK: - Message Actions
 
+        public var messageActionSwipeReply: UIImage = loadImageSafely(with: "icn_inline_reply")
         public var messageActionInlineReply: UIImage = loadImageSafely(with: "icn_inline_reply")
         public var messageActionThreadReply: UIImage = loadImageSafely(with: "icn_thread_reply")
         public var messageActionMarkUnread: UIImage = loadSafely(systemName: "message.badge", assetsFallback: "mark_unread")

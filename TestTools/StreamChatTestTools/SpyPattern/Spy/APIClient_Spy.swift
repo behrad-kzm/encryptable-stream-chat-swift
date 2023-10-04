@@ -41,6 +41,7 @@ final class APIClient_Spy: APIClient, Spy {
     @Atomic var init_attachmentUploader: AttachmentUploader
     @Atomic var request_expectation: XCTestExpectation
     @Atomic var recoveryRequest_expectation: XCTestExpectation
+    @Atomic var uploadRequest_expectation: XCTestExpectation
 
     // Cleans up all recorded values
     func cleanUp() {
@@ -49,6 +50,7 @@ final class APIClient_Spy: APIClient, Spy {
         request_completion = nil
         request_expectation = .init()
         recoveryRequest_expectation = .init()
+        uploadRequest_expectation = .init()
 
         recoveryRequest_endpoint = nil
         recoveryRequest_allRecordedCalls = []
@@ -65,9 +67,7 @@ final class APIClient_Spy: APIClient, Spy {
         sessionConfiguration: URLSessionConfiguration,
         requestEncoder: RequestEncoder,
         requestDecoder: RequestDecoder,
-        attachmentUploader: AttachmentUploader,
-        tokenRefresher: ((@escaping () -> Void) -> Void)!,
-        queueOfflineRequest: @escaping QueueOfflineRequestBlock
+        attachmentUploader: AttachmentUploader
     ) {
         init_sessionConfiguration = sessionConfiguration
         init_requestEncoder = requestEncoder
@@ -75,14 +75,13 @@ final class APIClient_Spy: APIClient, Spy {
         init_attachmentUploader = attachmentUploader
         request_expectation = .init()
         recoveryRequest_expectation = .init()
+        uploadRequest_expectation = .init()
 
         super.init(
             sessionConfiguration: sessionConfiguration,
             requestEncoder: requestEncoder,
             requestDecoder: requestDecoder,
-            attachmentUploader: attachmentUploader,
-            tokenRefresher: tokenRefresher,
-            queueOfflineRequest: queueOfflineRequest
+            attachmentUploader: attachmentUploader
         )
     }
 
@@ -147,6 +146,7 @@ final class APIClient_Spy: APIClient, Spy {
         uploadFile_attachment = attachment
         uploadFile_progress = progress
         uploadFile_completion = completion
+        uploadRequest_expectation.fulfill()
     }
 
     override func flushRequestsQueue() {
@@ -182,9 +182,7 @@ extension APIClient_Spy {
             sessionConfiguration: .ephemeral,
             requestEncoder: DefaultRequestEncoder(baseURL: .unique(), apiKey: .init(.unique)),
             requestDecoder: DefaultRequestDecoder(),
-            attachmentUploader: AttachmentUploader_Spy(),
-            tokenRefresher: { _ in },
-            queueOfflineRequest: { _ in }
+            attachmentUploader: AttachmentUploader_Spy()
         )
     }
 }

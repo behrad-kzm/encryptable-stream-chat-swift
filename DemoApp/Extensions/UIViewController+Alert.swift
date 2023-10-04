@@ -63,13 +63,16 @@ extension UIViewController {
         title: String?,
         message: String? = nil,
         actions: [UIAlertAction],
-        cancelHandler: (() -> Void)? = nil
+        cancelHandler: (() -> Void)? = nil,
+        preferredStyle: UIAlertController.Style = .alert,
+        sourceView: UIView? = nil
     ) {
         let alert = UIAlertController(
             title: title,
             message: message,
-            preferredStyle: .alert
+            preferredStyle: preferredStyle
         )
+        alert.popoverPresentationController?.sourceView = sourceView
 
         actions.forEach { alert.addAction($0) }
         alert.addAction(.init(title: "Cancel", style: .destructive, handler: { _ in

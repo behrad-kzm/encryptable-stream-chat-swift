@@ -111,7 +111,7 @@ extension XCTestCase {
     }
 
     var dummyChannelRead: ChannelReadPayload {
-        ChannelReadPayload(user: dummyCurrentUser, lastReadAt: Date(timeIntervalSince1970: 1), unreadMessagesCount: 10)
+        ChannelReadPayload(user: dummyCurrentUser, lastReadAt: Date(timeIntervalSince1970: 1), lastReadMessageId: .unique, unreadMessagesCount: 10)
     }
 
     func dummyPayload(
@@ -150,7 +150,8 @@ extension XCTestCase {
         channelExtraData: [String: RawJSON] = [:],
         createdAt: Date = XCTestCase.channelCreatedDate,
         truncatedAt: Date? = nil,
-        cooldownDuration: Int? = nil
+        cooldownDuration: Int? = nil,
+        channelReads: [ChannelReadPayload]? = nil
     ) -> ChannelPayload {
         var payloadMessages: [MessagePayload] = []
         if let messages = messages {
@@ -192,7 +193,7 @@ extension XCTestCase {
                 membership: includeMembership ? members.first : nil,
                 messages: payloadMessages,
                 pinnedMessages: pinnedMessages,
-                channelReads: [dummyChannelRead],
+                channelReads: channelReads ?? [dummyChannelRead],
                 isHidden: false
             )
 
@@ -224,7 +225,7 @@ extension XCTestCase {
     }
 
     var dummyChannelReadWithNoExtraData: ChannelReadPayload {
-        ChannelReadPayload(user: dummyUser, lastReadAt: .unique, unreadMessagesCount: .random(in: 0...10))
+        ChannelReadPayload(user: dummyUser, lastReadAt: .unique, lastReadMessageId: .unique, unreadMessagesCount: .random(in: 0...10))
     }
 
     func dummyPayloadWithNoExtraData(with channelId: ChannelId) -> ChannelPayload {

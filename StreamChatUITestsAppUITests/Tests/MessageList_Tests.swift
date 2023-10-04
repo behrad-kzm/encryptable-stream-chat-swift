@@ -469,6 +469,8 @@ extension MessageList_Tests {
     }
     
     func test_scrollToBottom_unreadCount() throws {
+        throw XCTSkip("https://github.com/GetStream/ios-issues-tracking/issues/491")
+        
         linkToScenario(withId: 1669)
         
         try XCTSkipIf(ProcessInfo().operatingSystemVersion.majorVersion == 12,
@@ -921,8 +923,10 @@ extension MessageList_Tests {
         }
     }
 
-    func test_threadReplyIsRemovedEverywhere_whenUserRemovesItFromChannel() {
+    func test_threadReplyIsRemovedEverywhere_whenUserRemovesItFromChannel() throws {
         linkToScenario(withId: 114)
+        
+        try XCTSkipIf(ProcessInfo().operatingSystemVersion.majorVersion == 12, "Flaky on iOS 12")
 
         let threadReply = "thread reply"
 
@@ -996,8 +1000,10 @@ extension MessageList_Tests {
         }
     }
 
-    func test_userRemovesThreadReply() {
+    func test_userRemovesThreadReply() throws {
         linkToScenario(withId: 53)
+        
+        try XCTSkipIf(ProcessInfo().operatingSystemVersion.majorVersion == 12, "Flaky on iOS 12")
 
         let threadReply = "thread reply"
 

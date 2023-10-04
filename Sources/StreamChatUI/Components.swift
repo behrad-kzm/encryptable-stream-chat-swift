@@ -43,6 +43,9 @@ public struct Components {
     /// A button used for sending a message, or any type of content.
     public var sendButton: UIButton.Type = SendButton.self
 
+    /// A button used for recording a voice message,
+    public var recordButton: RecordButton.Type = RecordButton.self
+
     /// A view for showing a cooldown when Slow Mode is active.
     public var cooldownView: CooldownView.Type = CooldownView.self
 
@@ -115,6 +118,10 @@ public struct Components {
     /// of the list  when there are few messages. By default it is `false`.
     public var shouldMessagesStartAtTheTop: Bool = false
 
+    /// Whether it should animate when opening the channel with a given message around id.
+    /// Ex: When opening a channel from a push notification with a given message id.
+    public var shouldAnimateJumpToMessageWhenOpeningChannel: Bool = true
+
     /// The view that shows the date for currently visible messages on top of message list.
     public var messageListScrollOverlayView: ChatMessageListScrollOverlayView.Type =
         ChatMessageListScrollOverlayView.self
@@ -127,6 +134,9 @@ public struct Components {
 
     /// A boolean value that determines whether date separators should be shown between each message.
     public var messageListDateSeparatorEnabled = false
+
+    /// A boolean value that determines whether swiping to quote reply is available.
+    public var messageSwipeToReplyEnabled = false
 
     /// The view controller used to perform message actions.
     public var messageActionsVC: ChatMessageActionsVC.Type = ChatMessageActionsVC.self
@@ -173,6 +183,9 @@ public struct Components {
     /// The injector used for injecting file attachment views
     public var filesAttachmentInjector: AttachmentViewInjector.Type = FilesAttachmentViewInjector.self
 
+    /// The injector used for injecting voice recording attachment views
+    public var voiceRecordingAttachmentInjector: AttachmentViewInjector.Type = VoiceRecordingAttachmentViewInjector.self
+
     /// The injector used to combine multiple types of attachment views.
     /// By default, it is a combination of a file injector and a gallery injector.
     public var mixedAttachmentInjector: MixedAttachmentViewInjector.Type = MixedAttachmentViewInjector.self
@@ -187,9 +200,17 @@ public struct Components {
     public var fileAttachmentListView: ChatMessageFileAttachmentListView
         .Type = ChatMessageFileAttachmentListView.self
 
+    /// The view that shows message's voiceRecording attachments.
+    public var voiceRecordingAttachmentListView: ChatMessageVoiceRecordingAttachmentListView
+        .Type = ChatMessageVoiceRecordingAttachmentListView.self
+
     /// The view that shows a single file attachment.
     public var fileAttachmentView: ChatMessageFileAttachmentListView.ItemView.Type =
         ChatMessageFileAttachmentListView.ItemView.self
+
+    /// The view that shows a single voiceRecording attachment.
+    public var voiceRecordingAttachmentView: ChatMessageVoiceRecordingAttachmentListView.ItemView.Type =
+        ChatMessageVoiceRecordingAttachmentListView.ItemView.self
 
     /// The view that shows a link preview in message cell.
     public var linkPreviewView: ChatMessageLinkPreviewView.Type =
@@ -210,6 +231,14 @@ public struct Components {
     /// The view that shows a video attachment preview inside a message.
     public var videoAttachmentGalleryPreview: VideoAttachmentGalleryPreview.Type = VideoAttachmentGalleryPreview.self
 
+    /// A view that displays the voiceRecording attachment preview in composer.
+    public var voiceRecordingAttachmentComposerPreview: VoiceRecordingAttachmentComposerPreview
+        .Type = VoiceRecordingAttachmentComposerPreview.self
+
+    /// A view that displays the voiceRecording attachment as a quoted preview in composer.
+    public var voiceRecordingAttachmentQuotedPreview: VoiceRecordingAttachmentQuotedPreview
+        .Type = VoiceRecordingAttachmentQuotedPreview.self
+
     /// The view that shows an overlay with uploading progress for image attachment that is being uploaded.
     public var uploadingOverlayView: UploadingOverlayView.Type = UploadingOverlayView.self
 
@@ -226,8 +255,11 @@ public struct Components {
     /// The view that shows a badge on `giphyAttachmentView`.
     public var giphyBadgeView: ChatMessageGiphyView.GiphyBadge.Type = ChatMessageGiphyView.GiphyBadge.self
 
-    /// The button that indicates unread messages at the bottom of the message list and scroll to the latest message on tap.
-    public var scrollToLatestMessageButton: ScrollToLatestMessageButton.Type = ScrollToLatestMessageButton.self
+    /// The button that indicates unread messages at the bottom of the message list and scroll to the bottom on tap.
+    public var scrollToBottomButton: ScrollToBottomButton.Type = ScrollToBottomButton.self
+
+    /// A flag which determines if `Jump to unread` feature will be enabled.
+    public var isJumpToUnreadEnabled = false
 
     /// The button that shows when there are unread messages outside the bounds of the screen. Can be tapped to scroll to them, or can be discarded.
     public var jumpToUnreadMessagesButton: JumpToUnreadMessagesButton.Type = JumpToUnreadMessagesButton.self
@@ -243,6 +275,9 @@ public struct Components {
     /// The view that shows messages delivery status checkmark in channel preview and in message view.
     public var messageDeliveryStatusCheckmarkView: ChatMessageDeliveryStatusCheckmarkView.Type =
         ChatMessageDeliveryStatusCheckmarkView.self
+
+    /// A flag which determines if an unread messages separator should be displayed when there are new messages.
+    public var isUnreadMessagesSeparatorEnabled = true
 
     /// The view that displays the number of unread messages in the chat.
     public var unreadMessagesCounterDecorationView: ChatUnreadMessagesCountDecorationView.Type = ChatUnreadMessagesCountDecorationView.self
@@ -302,6 +337,13 @@ public struct Components {
     /// A boolean value that determines whether thread replies counter decoration should be shown below the source message of a thread.
     public var threadRepliesCounterEnabled = true
 
+    /// A boolean value that determines whether the thread view renders the parent message at the top.
+    public var threadRendersParentMessageEnabled = true
+
+    /// A boolean value that determines if thread replies start from the oldest replies.
+    /// By default it is false, and newest replies are rendered in the first page.
+    public var threadRepliesStartFromOldest = false
+
     // MARK: - Channel components
 
     /// The view controller that contains the channel messages and represents the chat view.
@@ -325,7 +367,7 @@ public struct Components {
     /// The view that shows channel information.
     public var channelContentView: ChatChannelListItemView.Type = ChatChannelListItemView.self
 
-    /// The view that shows a user avatar including an indicator of the user presence (online/offline).
+    /// The view that shows the channel avatar including an indicator of the user presence (online/offline).
     public var channelAvatarView: ChatChannelAvatarView.Type = ChatChannelAvatarView.self
 
     /// The view that shows a number of unread messages in channel.
@@ -338,11 +380,38 @@ public struct Components {
     public var channelListErrorView: ChatChannelListErrorView.Type = ChatChannelListErrorView.self
 
     /// View that shows when loading the Channel list.
-    public var chatChannelListLoadingView: ChatChannelListLoadingView.Type = ChatChannelListLoadingView.self
+    public var channelListLoadingView: ChatChannelListLoadingView.Type = ChatChannelListLoadingView.self
+
+    /// The `UITableViewCell` responsible to display a skeleton loading view.
+    public var channelListLoadingViewCell: ChatChannelListLoadingViewCell.Type = ChatChannelListLoadingViewCell.self
+
+    /// The content view inside the `UITableViewCell` responsible to display a skeleton loading view.
+    public var channelListLoadingContentViewCell: ChatChannelListLoadingViewCellContentView.Type = ChatChannelListLoadingViewCellContentView.self
 
     /// A boolean value that determines whether the Channel list default loading states (empty, error and loading views) are handled by the Stream SDK. It is false by default.
     /// If it is false, it does not show empty or error views and just shows a spinner indicator for the loading state. If set to true, the empty, error and shimmer loading views are shown instead.
     public var isChatChannelListStatesEnabled = false
+
+    // MARK: - Channel Search
+
+    /// The channel list search strategy. By default, search is disabled so it is `nil`.
+    ///
+    /// To enable searching by messages you can provide the following strategy:
+    /// ```
+    /// // With default UI Component
+    /// Components.default.channelListSearchStrategy = .messages
+    /// // With custom UI Component
+    /// Components.default.channelListSearchStrategy = .messages(CustomChatMessageSearchVC.self)
+    /// ```
+    ///
+    /// To enable searching by channels you can provide the following strategy:
+    /// ```
+    /// // With default UI Component
+    /// Components.default.channelListSearchStrategy = .channels
+    /// // With custom UI Component
+    /// Components.default.channelListSearchStrategy = .channels(CustomChatChannelSearchVC.self)
+    /// ```
+    public var channelListSearchStrategy: ChannelListSearchStrategy?
 
     // MARK: - Composer components
 
@@ -406,8 +475,33 @@ public struct Components {
     public var suggestionsHeaderView: ChatSuggestionsHeaderView.Type =
         ChatSuggestionsHeaderView.self
 
-    /// A type for the view used as avatar when picking users to mention.
-    public var mentionAvatarView: ChatUserAvatarView.Type = ChatUserAvatarView.self
+    /// The view that shows a user avatar including an indicator of the user presence (online/offline).
+    public var userAvatarView: ChatUserAvatarView.Type = ChatUserAvatarView.self
+
+    // MARK: - Composer VoiceRecording components
+
+    /// A flag which determines if `VoiceRecording` feature will be enabled.
+    public var isVoiceRecordingEnabled = false
+
+    /// When set to `true` recorded messages can be grouped together and send as part of one message.
+    /// When set to `false`, recorded messages will be sent instantly.
+    public var isVoiceRecordingConfirmationRequiredEnabled = true
+
+    /// The ViewController that handles the recording flow.
+    public var voiceRecordingViewController: VoiceRecordingVC.Type = VoiceRecordingVC.self
+
+    /// The AudioPlayer that will be used for the voiceRecording playback.
+    public var audioPlayer: AudioPlaying.Type = StreamAudioQueuePlayer.self
+
+    /// The AudioRecorder that will be used to record new voiceRecordings.
+    public var audioRecorder: AudioRecording.Type = StreamAudioRecorder.self
+
+    /// A feedbackGenerator that will be used to provide haptic feedback during the recording flow.
+    public var audioSessionFeedbackGenerator: AudioSessionFeedbackGenerator.Type = StreamAudioSessionFeedbackGenerator.self
+
+    /// If the AudioPlayer supports queuing, this object will be asked to provide the VoiceRecording to
+    /// play automatically, once the current one completes.
+    public var audioQueuePlayerNextItemProvider: AudioQueuePlayerNextItemProvider.Type = AudioQueuePlayerNextItemProvider.self
 
     // MARK: - Current user components
 
@@ -455,6 +549,37 @@ public extension Components {
         }
         set {
             DefaultChannelNameFormatter.channelNamer = newValue
+        }
+    }
+
+    /// The button that indicates unread messages at the bottom of the message list and scroll to the latest message on tap.
+    @available(*, deprecated, renamed: "scrollToBottomButton")
+    var scrollToLatestMessageButton: ScrollToBottomButton.Type {
+        get {
+            scrollToBottomButton
+        }
+        set {
+            scrollToBottomButton = newValue
+        }
+    }
+
+    @available(*, deprecated, renamed: "userAvatarView")
+    var mentionAvatarView: ChatUserAvatarView.Type {
+        get {
+            userAvatarView
+        }
+        set {
+            userAvatarView = newValue
+        }
+    }
+
+    @available(*, deprecated, renamed: "channelListLoadingView")
+    var chatChannelListLoadingView: ChatChannelListLoadingView.Type {
+        get {
+            channelListLoadingView
+        }
+        set {
+            channelListLoadingView = newValue
         }
     }
 }

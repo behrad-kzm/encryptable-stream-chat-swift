@@ -12,6 +12,11 @@ public class ChatChannelController_Mock: ChatChannelController {
         mockCid ?? super.cid
     }
 
+    var mockFirstUnreadMessageId: MessageId?
+    public override var firstUnreadMessageId: MessageId? {
+        mockFirstUnreadMessageId ?? super.firstUnreadMessageId
+    }
+
     /// Creates a new mock instance of `ChatChannelController`.
     public static func mock(chatClientConfig: ChatClientConfig? = nil) -> ChatChannelController_Mock {
         .init(
@@ -41,14 +46,40 @@ public class ChatChannelController_Mock: ChatChannelController {
         )
     }
 
+    var createNewMessageCallCount = 0
+    public override func createNewMessage(
+        messageId: MessageId? = nil,
+        text: String, pinning: MessagePinning? = nil,
+        isSilent: Bool = false,
+        attachments: [AnyAttachmentPayload] = [],
+        mentionedUserIds: [UserId] = [],
+        quotedMessageId: MessageId? = nil,
+        skipPush: Bool = false,
+        skipEnrichUrl: Bool = false,
+        extraData: [String : RawJSON] = [:],
+        completion: ((Result<MessageId, Error>) -> Void)? = nil
+    ) {
+        createNewMessageCallCount += 1
+    }
+
     public var hasLoadedAllNextMessages_mock: Bool? = true
     public override var hasLoadedAllNextMessages: Bool {
         hasLoadedAllNextMessages_mock ?? super.hasLoadedAllNextMessages
     }
 
+    public var markedAsUnread_mock: Bool? = true
+    public override var isMarkedAsUnread: Bool {
+        markedAsUnread_mock ?? super.isMarkedAsUnread
+    }
+
     public var channel_mock: ChatChannel?
     override public var channel: ChatChannel? {
         channel_mock ?? super.channel
+    }
+
+    public var channelQuery_mock: ChannelQuery?
+    public override var channelQuery: ChannelQuery {
+        channelQuery_mock ?? super.channelQuery
     }
 
     public var messages_mock: [ChatMessage]?
@@ -61,7 +92,7 @@ public class ChatChannelController_Mock: ChatChannelController {
         markReadCallCount += 1
     }
 
-    public private(set) var state_mock: State?
+    public var state_mock: State?
     override public var state: DataController.State {
         get { state_mock ?? super.state }
         set { super.state = newValue }
