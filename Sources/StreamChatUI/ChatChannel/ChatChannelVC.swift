@@ -47,7 +47,7 @@ open class ChatChannelVC: _ViewController,
         .init()
 
     /// Controller that handles the composer view
-    open private(set) lazy var messageComposerVC = components
+    open lazy var messageComposerVC = components
         .messageComposerVC
         .init()
 

@@ -23,7 +23,7 @@ public class ChatMessageCell: _TableViewCell, ThemeProvider {
         .withAccessibilityIdentifier(identifier: "headerContainerView")
 
     /// The message content view the cell is showing.
-    public private(set) var messageContentView: ChatMessageContentView?
+    public var messageContentView: ChatMessageContentView?
 
     /// The footer View of the cell. It can be used to display additional information
     /// about the message below the message's content.

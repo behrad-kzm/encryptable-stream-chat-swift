@@ -27,7 +27,9 @@ open class ChatMessageListVC: _ViewController,
             updateContentIfNeeded()
         }
     }
-
+  
+  public var publishDecryptionHandler: ((String, String) -> String)? = nil
+  
     /// The object that acts as the delegate of the message list.
     public weak var delegate: ChatMessageListVCDelegate?
 
@@ -43,7 +45,7 @@ open class ChatMessageListVC: _ViewController,
     private var messageActionsVC: ChatMessageActionsVC?
 
     /// A View used to display the messages.
-    open private(set) lazy var listView: ChatMessageListView = components
+    open lazy var listView: ChatMessageListView = components
         .messageListView
         .init()
         .withoutAutoresizingMaskConstraints
@@ -696,15 +698,22 @@ open class ChatMessageListVC: _ViewController,
         else {
             return cell
         }
-
+        
         cell.messageContentView?.delegate = self
         cell.messageContentView?.channel = channel
         cell.messageContentView?.content = message
-
+        
         /// Process cell decorations
         cell.setDecoration(for: .header, decorationView: delegate?.chatMessageListVC(self, headerViewForMessage: message, at: indexPath))
         cell.setDecoration(for: .footer, decorationView: delegate?.chatMessageListVC(self, footerViewForMessage: message, at: indexPath))
 
+      if let decryption = self.publishDecryptionHandler,
+          let contentMessage = cell.messageContentView?.content, (!contentMessage.isDecrypted) {
+        if !contentMessage.text.isEmpty {
+          let decrypted = decryption(contentMessage.text, contentMessage.author.id)
+          cell.messageContentView?.content?.text = decrypted
+        }
+      }
         return cell
     }
 
